@@ -99,7 +99,7 @@ export default function ConsequenceScreen({ partA, onContinue, isGameOver, isVic
 
             {/* Consequences */}
             {consequences.map((c, i) => (
-              <div key={c.slot} style={{
+              <div key={c.story_id || i} style={{
                 padding: "16px 0",
                 borderBottom: `1px solid ${theme.cardBorder}`,
                 animation: `fadeIn 0.5s ease ${i * 0.18}s both`,
@@ -109,7 +109,7 @@ export default function ConsequenceScreen({ partA, onContinue, isGameOver, isVic
                   letterSpacing: "0.12em", textTransform: "uppercase",
                   color: theme.subColor, marginBottom: 6,
                 }}>
-                  Slot {c.slot} — {["Headline", "Secondary", "Side", "Bottom"][c.slot - 1] || ""}
+                  {["Lead Story", "Secondary", "Side", "Buried"][i] || `Story ${i + 1}`}
                 </div>
                 <p style={{
                   margin: 0, fontFamily: theme.font,

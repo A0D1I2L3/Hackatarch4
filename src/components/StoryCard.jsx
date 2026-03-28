@@ -29,7 +29,7 @@ const EXPLOSIVE_DOTS = (n, theme) =>
     />
   ));
 
-export default function StoryCard({ story, onDragStart, dragging, compact }) {
+export default function StoryCard({ story, onDragStart, dragging, compact, onReadMore }) {
   const { theme } = useSettings();
   if (!story) return null;
   const ts = TAG_STYLES[story.tag] || TAG_STYLES.default;
@@ -84,6 +84,24 @@ export default function StoryCard({ story, onDragStart, dragging, compact }) {
           ? story.headline.slice(0, 80) + "…"
           : story.headline}
       </p>
+
+      {!compact && (
+        <button
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onReadMore?.(story); }}
+          style={{
+            marginTop: 3,
+            background: "none", border: "none",
+            fontSize: 9, color: "#94a3b8",
+            cursor: "pointer", padding: 0,
+            letterSpacing: "0.06em",
+            textDecoration: "underline",
+            textTransform: "uppercase",
+          }}
+        >
+          Read article
+        </button>
+      )}
 
       {!compact && (
         <p style={{

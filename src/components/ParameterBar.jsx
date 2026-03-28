@@ -19,7 +19,7 @@ function BarStat({ paramKey, value, prevValue, theme }) {
           fontFamily: theme.mono, fontSize: 9, letterSpacing: "0.12em",
           textTransform: "uppercase", color: theme.subColor,
         }}>
-          {p.symbol}
+          {p.label}
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
           {delta !== 0 && (
@@ -47,14 +47,6 @@ function BarStat({ paramKey, value, prevValue, theme }) {
           background: barColor,
           transition: "width 0.9s cubic-bezier(0.4,0,0.2,1), background 0.5s",
         }} />
-      </div>
-
-      <div style={{
-        fontFamily: theme.mono, fontSize: 8, letterSpacing: "0.06em",
-        textTransform: "uppercase", color: theme.subColor,
-        marginTop: 3, opacity: 0.75,
-      }}>
-        {p.label}
       </div>
 
       {danger && (

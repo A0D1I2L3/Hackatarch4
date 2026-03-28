@@ -14,12 +14,14 @@ import {
 } from "./engine/scoring.js";
 
 import StoryCard from "./components/StoryCard.jsx";
+import StoryModal from "./components/StoryModal.jsx";
 import NewspaperGrid from "./components/NewspaperGrid.jsx";
 import ParameterBar from "./components/ParameterBar.jsx";
 import ExternalFactorPanel from "./components/ExternalFactorPanel.jsx";
 import ConsequenceScreen from "./components/ConsequenceScreen.jsx";
 import EndingScreen from "./components/EndingScreen.jsx";
 import LoadingScreen from "./components/LoadingScreen.jsx";
+import FactorIntroScreen from "./components/FactorIntroScreen.jsx";
 import SettingsDrawer from "./components/SettingsDrawer.jsx";
 import { useSettings } from "./context/SettingsContext.jsx";
 
@@ -58,14 +60,15 @@ export default function App() {
   const [collapseKey, setCollapseKey] = useState(null);
   const [isVictory, setIsVictory] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [selectedStory, setSelectedStory] = useState(null);
 
   const placedIds = new Set(gridItems.map((it) => it.story.story_id));
-  const availableStories = dayData.stories.filter((s) => !placedIds.has(s.story_id));
+  const availableStories = dayData.stories.filter(
+    (s) => !placedIds.has(s.story_id),
+  );
   const placedCount = gridItems.length;
   const allSlotsPlaced = placedCount >= 1;
   const totalCells = gridItems.reduce((s, it) => s + it.w * it.h, 0);
-  const itemDisplayWeight = (it) => it.weight != null ? it.weight : it.w * it.h;
-
   const handleDragStart = useCallback((e, story) => {
     setDraggedStory(story);
     e.dataTransfer.effectAllowed = "move";
@@ -102,6 +105,8 @@ export default function App() {
           w: it.w,
           h: it.h,
           weight: it.weight ?? it.w * it.h,
+          sensitivity: it.story.slot_sensitivity,
+          explosive_rating: it.story.explosive_rating,
         })),
         factors: factorsWithResponse,
         arcFlags,
@@ -111,7 +116,9 @@ export default function App() {
       setPrevScores({ ...scores });
       setScores(nextScores);
 
-      const newFlags = b.stories.map((s) => s.arc_flag_generated).filter(Boolean);
+      const newFlags = b.stories
+        .map((s) => s.arc_flag_generated)
+        .filter(Boolean);
       setArcFlags((prev) => [...new Set([...prev, ...newFlags])]);
 
       const collapsed = checkCollapses(nextScores);
@@ -141,23 +148,27 @@ export default function App() {
       setPhase("error");
     }
     setLoading(false);
-  }, [allSlotsPlaced, dayData, dayNumber, scores, slots, factorResponses, arcFlags]);
+  }, [allSlotsPlaced, dayData, dayNumber, scores, factorResponses, arcFlags]);
 
   const handleContinueFromConsequence = useCallback(() => {
     if (collapseKey || isVictory || dayNumber >= MAX_DAYS) {
       setPhase("ending");
     } else {
-      const nextDay = dayNumber + 1;
-      setDayNumber(nextDay);
-      setDayData(nextDayData);
-      setSlots(makeInitialSlots());
-      setGridItems([]);
-      setFactorResponses(makeInitialResponses(nextDayData?.external_factors));
-      setPartA(null);
-      setNextDayData(null);
-      setPhase("story_delivery");
+      setPhase("factor_intro");
     }
-  }, [collapseKey, isVictory, dayNumber, nextDayData]);
+  }, [collapseKey, isVictory, dayNumber]);
+
+  const handleFactorIntroDone = useCallback(() => {
+    const nextDay = dayNumber + 1;
+    setDayNumber(nextDay);
+    setDayData(nextDayData);
+    setSlots(makeInitialSlots());
+    setGridItems([]);
+    setFactorResponses(makeInitialResponses(nextDayData?.external_factors));
+    setPartA(null);
+    setNextDayData(null);
+    setPhase("story_delivery");
+  }, [dayNumber, nextDayData]);
 
   const handleRestart = useCallback(() => {
     setPhase("story_delivery");
@@ -190,7 +201,10 @@ export default function App() {
 
   // ── Settings drawer (always mounted for smooth animation) ──
   const settingsDrawer = (
-    <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+    <SettingsDrawer
+      open={settingsOpen}
+      onClose={() => setSettingsOpen(false)}
+    />
   );
 
   if (phase === "publishing" || phase === "error") {
@@ -199,7 +213,10 @@ export default function App() {
         {settingsDrawer}
         <LoadingScreen
           error={apiError}
-          onRetry={() => { setApiError(null); setPhase("story_delivery"); }}
+          onRetry={() => {
+            setApiError(null);
+            setPhase("story_delivery");
+          }}
         />
       </>
     );
@@ -235,6 +252,21 @@ export default function App() {
     );
   }
 
+  if (phase === "factor_intro" && nextDayData) {
+    return (
+      <>
+        {settingsDrawer}
+        <FactorIntroScreen
+          dayNumber={dayNumber + 1}
+          dayTitle={nextDayData.day_title}
+          atmosphere={nextDayData.newsroom_atmosphere}
+          factors={nextDayData.external_factors || []}
+          onDone={handleFactorIntroDone}
+        />
+      </>
+    );
+  }
+
   return (
     <div className="app-page" style={pageStyle}>
       {settingsDrawer}
@@ -243,20 +275,31 @@ export default function App() {
       <div
         className="top-bar"
         style={{
-          background: theme.darkMode ? `${theme.cardBg}ee` : `${theme.bgColor}ee`,
+          background: theme.darkMode
+            ? `${theme.cardBg}ee`
+            : `${theme.bgColor}ee`,
           backdropFilter: "blur(6px)",
         }}
       >
         <div className="top-bar-inner">
           <div className="top-bar-left">
-            <div className="top-bar-label" style={{ fontFamily: theme.mono, color: theme.subColor }}>
+            <div
+              className="top-bar-label"
+              style={{ fontFamily: theme.mono, color: theme.subColor }}
+            >
               {settings.paperName}
             </div>
-            <div className="top-bar-title" style={{ fontFamily: theme.font, color: theme.textColor }}>
+            <div
+              className="top-bar-title"
+              style={{ fontFamily: theme.font, color: theme.textColor }}
+            >
               Day {dayNumber} — {dayData.day_title || "The Editor's Table"}
             </div>
             {dayData.newsroom_atmosphere && (
-              <div className="top-bar-atmosphere" style={{ color: theme.subColor, fontFamily: theme.font }}>
+              <div
+                className="top-bar-atmosphere"
+                style={{ color: theme.subColor, fontFamily: theme.font }}
+              >
                 {dayData.newsroom_atmosphere}
               </div>
             )}
@@ -269,9 +312,11 @@ export default function App() {
                 <div
                   key={i}
                   className={`day-pip ${
-                    i < dayNumber - 1 ? "pip-done"
-                    : i === dayNumber - 1 ? "pip-current"
-                    : "pip-future"
+                    i < dayNumber - 1
+                      ? "pip-done"
+                      : i === dayNumber - 1
+                        ? "pip-current"
+                        : "pip-future"
                   }`}
                 />
               ))}
@@ -287,20 +332,29 @@ export default function App() {
                 borderColor: theme.cardBorder,
                 fontFamily: theme.mono,
               }}
-              onMouseEnter={e => {
+              onMouseEnter={(e) => {
                 e.currentTarget.style.borderColor = theme.textColor;
                 e.currentTarget.style.color = theme.textColor;
                 e.currentTarget.style.background = theme.barBg;
               }}
-              onMouseLeave={e => {
+              onMouseLeave={(e) => {
                 e.currentTarget.style.borderColor = theme.cardBorder;
                 e.currentTarget.style.color = theme.subColor;
                 e.currentTarget.style.background = "transparent";
               }}
             >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="3"/>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </svg>
               CUSTOMIZE
             </button>
@@ -312,24 +366,33 @@ export default function App() {
 
       {/* ── MAIN 3-COLUMN GRID ─────────────────────────────────── */}
       <div className="main-grid">
-
         {/* LEFT: Story Pool */}
         <div
           className="panel story-pool-panel"
           style={{
-            background: theme.darkMode ? `${theme.cardBg}bb` : `${theme.bgColor}bb`,
+            background: theme.darkMode
+              ? `${theme.cardBg}bb`
+              : `${theme.bgColor}bb`,
             borderRight: `1px solid ${theme.cardBorder}`,
           }}
         >
-          <div className="panel-title" style={{ fontFamily: theme.mono, color: theme.textColor }}>
-            Wire Stories
+          <div
+            className="panel-title"
+            style={{ fontFamily: theme.mono, color: theme.textColor }}
+          >
+            Junior Editor
           </div>
-          <div className="panel-subtitle" style={{ color: theme.subColor, fontFamily: theme.mono }}>
-            Drag to arrange your front page
+          <div
+            className="panel-subtitle"
+            style={{ color: theme.subColor, fontFamily: theme.mono }}
+          >
+            Review stories · drag to the front page
           </div>
 
           {availableStories.length === 0 ? (
-            <p className="all-placed-msg" style={{ color: theme.subColor }}>All stories placed</p>
+            <p className="all-placed-msg" style={{ color: theme.subColor }}>
+              All stories placed
+            </p>
           ) : (
             availableStories.map((story) => (
               <StoryCard
@@ -337,6 +400,7 @@ export default function App() {
                 story={story}
                 onDragStart={handleDragStart}
                 dragging={draggedStory?.story_id === story.story_id}
+                onReadMore={setSelectedStory}
               />
             ))
           )}
@@ -358,13 +422,22 @@ export default function App() {
               borderBottom: `1px solid ${theme.cardBorder}`,
             }}
           >
-            <div className="newspaper-title" style={{ fontFamily: theme.font, color: theme.textColor }}>
+            <div
+              className="newspaper-title"
+              style={{ fontFamily: theme.font, color: theme.textColor }}
+            >
               {settings.paperName}
             </div>
-            <div className="newspaper-tagline" style={{ color: theme.subColor, fontFamily: theme.font }}>
+            <div
+              className="newspaper-tagline"
+              style={{ color: theme.subColor, fontFamily: theme.font }}
+            >
               {settings.paperSlogan}
             </div>
-            <div className="newspaper-meta" style={{ color: theme.subColor, fontFamily: theme.mono }}>
+            <div
+              className="newspaper-meta"
+              style={{ color: theme.subColor, fontFamily: theme.mono }}
+            >
               <span>Halcyon City · Vol. LXXX</span>
               <span className="newspaper-meta-italic">
                 Editor: {settings.editorName || "Morgan Voss"}
@@ -393,6 +466,7 @@ export default function App() {
           {/* 10×10 Grid */}
           <div style={{ padding: "12px 14px" }}>
             <NewspaperGrid
+              key={`grid-day-${dayNumber}`}
               draggedStory={draggedStory}
               onGridChange={handleGridChange}
               published={false}
@@ -427,7 +501,9 @@ export default function App() {
         <div
           className="panel right-panel"
           style={{
-            background: theme.darkMode ? `${theme.cardBg}bb` : `${theme.bgColor}bb`,
+            background: theme.darkMode
+              ? `${theme.cardBg}bb`
+              : `${theme.bgColor}bb`,
             borderLeft: `1px solid ${theme.cardBorder}`,
           }}
         >
@@ -437,51 +513,15 @@ export default function App() {
             onResponse={handleFactorResponse}
             disabled={false}
           />
-
-          <div className="divider-section">
-            <div className="section-label" style={{ fontFamily: theme.mono, color: theme.subColor }}>
-              Headline Weights
-            </div>
-            {gridItems.length === 0 ? (
-              <div className="multiplier-hint" style={{ color: theme.subColor, fontFamily: theme.mono }}>
-                No headlines placed yet. Drag stories onto the grid.
-              </div>
-            ) : (
-              gridItems.map((it) => (
-                <div
-                  key={it.id}
-                  className="multiplier-row"
-                  style={{ borderBottom: `1px solid ${theme.cardBorder}44` }}
-                >
-                  <span style={{
-                    fontSize: 9, maxWidth: 130, color: theme.textColor,
-                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                  }}>
-                    {it.story.headline}
-                  </span>
-                  <span className="multiplier-value" style={{ color: theme.accentGold, fontFamily: theme.mono }}>
-                    ◼ {itemDisplayWeight(it)}
-                  </span>
-                </div>
-              ))
-            )}
-            <div className="multiplier-hint" style={{ color: theme.subColor, fontFamily: theme.mono }}>
-              Weight = cell values covered (top = 2.5, bottom = 0.3). Higher &amp; larger = more emphasis.
-            </div>
-          </div>
-
-          {arcFlags.length > 0 && (
-            <div className="divider-section">
-              <div className="section-label" style={{ fontFamily: theme.mono, color: theme.subColor }}>
-                Active Arc Flags
-              </div>
-              {arcFlags.map((f) => (
-                <div key={f} className="arc-flag" style={{ fontFamily: theme.mono }}>{f}</div>
-              ))}
-            </div>
-          )}
         </div>
       </div>
+      {/* Story read popup */}
+      {selectedStory && (
+        <StoryModal
+          story={selectedStory}
+          onClose={() => setSelectedStory(null)}
+        />
+      )}
     </div>
   );
 }

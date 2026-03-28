@@ -1,36 +1,40 @@
 import { SYSTEM_PROMPT } from "./constants.js";
 
 // ─── API KEY ──────────────────────────────────────────────────────────────────
-// Set VITE_GROK_API_KEY in your .env file:
-//   VITE_GROK_API_KEY=xai-your-key-here
 const GROK_API_KEY = import.meta.env.VITE_GROK_API_KEY || "";
+
+// ─── DEV LOGGING ─────────────────────────────────────────────────────────────
+const DEV = import.meta.env.DEV;
+const log = (...args) => { if (DEV) console.log("[Editor]", ...args); };
 
 // ─── BUILD REQUEST PAYLOAD ────────────────────────────────────────────────────
 function buildPayload(gameState) {
   const {
     day,
     scores,
-    slots,        // { slot_1_headline: story|null, slot_2_secondary: story|null, ... }
-    factors,      // [{ factor_id, name, type, pressure, description, player_response }]
-    arcFlags,     // string[]
+    slots,      // array of { story_id, headline, col, row, w, h, weight }
+    factors,    // [{ factor_id, name, type, pressure, description, player_response }]
+    arcFlags,   // string[]
   } = gameState;
 
-  const bentoLayout = {};
-  Object.entries(slots).forEach(([slotId, story]) => {
-    if (story) {
-      bentoLayout[slotId] = {
-        story_id: story.story_id,
-        title: story.headline,
-        sensitivity: story.slot_sensitivity,
-        explosive_rating: story.explosive_rating,
-      };
-    }
-  });
+  // grid_layout: array sorted by weight descending
+  const gridLayout = [...slots].sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0)).map((it) => ({
+    story_id: it.story_id,
+    headline: it.headline,
+    col: it.col,
+    row: it.row,
+    w: it.w,
+    h: it.h,
+    weight: it.weight ?? it.w * it.h,
+    position_label: it.row <= 3 ? "above-fold" : it.row <= 6 ? "mid-fold" : "below-fold",
+    sensitivity: it.sensitivity,
+    explosive_rating: it.explosive_rating,
+  }));
 
   const userContent = {
     day,
     current_scores: scores,
-    bento_layout: bentoLayout,
+    grid_layout: gridLayout,
     external_factors_active: factors.map((f) => ({
       factor_id: f.factor_id,
       name: f.name,
@@ -56,6 +60,9 @@ export async function processEditorTurn(gameState) {
   if (!GROK_API_KEY) {
     throw new Error("NO_API_KEY");
   }
+
+  log("Day", gameState.day, "→ Groq");
+  log("Grid items:", gameState.slots);
 
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
@@ -83,6 +90,9 @@ export async function processEditorTurn(gameState) {
   } catch {
     throw new Error(`Failed to parse Grok response: ${clean.slice(0, 300)}`);
   }
+
+  log("Part A score deltas:", result.part_a?.score_updates);
+  log("Part B stories:", result.part_b?.stories?.length, "stories,", result.part_b?.external_factors?.length, "factors");
 
   return {
     partA: result.part_a,
