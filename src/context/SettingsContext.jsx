@@ -4,11 +4,11 @@ import { createContext, useContext, useState } from "react";
 //  FONT OPTIONS
 // ─────────────────────────────────────────────────────────────
 export const FONT_OPTIONS = [
-  { id: "georgia",      label: "Georgia",              value: "'Georgia', 'Times New Roman', serif" },
-  { id: "playfair",     label: "Playfair Display",     value: "'Playfair Display', Georgia, serif" },
-  { id: "merriweather", label: "Merriweather",         value: "'Merriweather', Georgia, serif" },
-  { id: "courier",      label: "Courier (Typewriter)", value: "'Courier New', Courier, monospace" },
-  { id: "garamond",     label: "EB Garamond",          value: "'EB Garamond', Georgia, serif" },
+  { id: "playfair",      label: "Playfair Display",    value: "'Playfair Display', 'Times New Roman', serif" },
+  { id: "baskerville",   label: "Libre Baskerville",   value: "'Libre Baskerville', Georgia, serif" },
+  { id: "georgia",       label: "Georgia",             value: "'Georgia', 'Times New Roman', serif" },
+  { id: "garamond",      label: "EB Garamond",         value: "'EB Garamond', Georgia, serif" },
+  { id: "courier",       label: "Typewriter",          value: "'Special Elite', 'Courier New', monospace" },
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -48,7 +48,7 @@ export function SettingsProvider({ children }) {
 
   const font = FONT_OPTIONS.find((f) => f.id === settings.fontId) ?? FONT_OPTIONS[0];
   const bg   = BG_OPTIONS.find((b) => b.id === settings.bgId)     ?? BG_OPTIONS[0];
-  const MONO = "'Courier New', monospace";
+  const MONO = "'Special Elite', 'Courier New', monospace";
 
   const theme = {
     font:       font.value,

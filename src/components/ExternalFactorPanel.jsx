@@ -1,112 +1,144 @@
 import React from "react";
+import { useSettings } from "../context/SettingsContext.jsx";
 
-const TYPE_COLORS = {
-  political:  { bg: "#dbeafe", color: "#1e40af", icon: "◉" },
-  commercial: { bg: "#fef9c3", color: "#854d0e", icon: "$" },
-  staff:      { bg: "#fff7ed", color: "#c2410c", icon: "◈" },
-  public:     { bg: "#d1fae5", color: "#065f46", icon: "★" },
-  personal:   { bg: "#fce7f3", color: "#9d174d", icon: "♦" },
+const TYPE_META = {
+  political:  { symbol: "◉", label: "Political"  },
+  commercial: { symbol: "$", label: "Commercial" },
+  staff:      { symbol: "◈", label: "Staff"       },
+  public:     { symbol: "★", label: "Public"      },
+  personal:   { symbol: "♦", label: "Personal"    },
 };
 
-const PRESSURE_COLORS = {
-  low:      "#22c55e",
-  medium:   "#f59e0b",
-  high:     "#ef4444",
-  critical: "#7c3aed",
+const PRESSURE_INK = {
+  low:      "#2a6a2a",
+  medium:   "#7a5c2e",
+  high:     "#8b4a1a",
+  critical: "#8b1a1a",
 };
 
 const RESPONSES = ["ignored", "acknowledged", "appeased"];
 const RESPONSE_LABELS = { ignored: "Ignore", acknowledged: "Acknowledge", appeased: "Appease" };
 const RESPONSE_DESC = {
-  ignored:      "Full pressure applied. May unlock Brave Stand bonus if story is Slot 1.",
+  ignored:      "Full pressure applied. Brave Stand bonus if story is Slot 1.",
   acknowledged: "30% pressure reduction. No additional cost.",
   appeased:     "70% pressure reduction. BUT: −10 Integrity, −8 Morale.",
 };
 
 export default function ExternalFactorPanel({ factors, responses, onResponse, disabled }) {
+  const { theme } = useSettings();
+
   return (
     <div>
-      <div
-        style={{
-          fontFamily: "'Georgia', serif",
-          fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase",
-          color: "#64748b", marginBottom: 10, fontWeight: 700,
-        }}
-      >
+      <div style={{
+        fontFamily: theme.mono, fontSize: 9, letterSpacing: "0.18em",
+        textTransform: "uppercase", color: theme.subColor,
+        marginBottom: 12, fontWeight: 700,
+        paddingBottom: 8, borderBottom: `1px solid ${theme.cardBorder}`,
+      }}>
         External Pressures
       </div>
+
       {factors.map((f) => {
-        const tc = TYPE_COLORS[f.type] || TYPE_COLORS.political;
+        const tm = TYPE_META[f.type] || TYPE_META.political;
+        const pressureColor = PRESSURE_INK[f.pressure] || PRESSURE_INK.medium;
         const response = responses[f.factor_id] || "ignored";
+
         return (
           <div
             key={f.factor_id}
             style={{
-              background: "#fff",
-              border: "1px solid #e2e8f0",
-              borderLeft: `4px solid ${PRESSURE_COLORS[f.pressure]}`,
-              borderRadius: 8,
+              background: theme.cardBg,
+              border: `1px solid ${theme.cardBorder}`,
+              borderLeft: `3px solid ${pressureColor}`,
               padding: "11px 13px",
               marginBottom: 10,
             }}
           >
             {/* Header */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-              <span
-                style={{
-                  fontSize: 9, fontWeight: 700, letterSpacing: "0.07em",
-                  textTransform: "uppercase", padding: "2px 6px", borderRadius: 3,
-                  background: tc.bg, color: tc.color,
-                }}
-              >
-                {tc.icon} {f.type}
+              <span style={{
+                fontFamily: theme.mono, fontSize: 8, letterSpacing: "0.1em",
+                textTransform: "uppercase", color: pressureColor,
+                border: `1px solid ${pressureColor}33`,
+                padding: "1px 5px",
+              }}>
+                {tm.symbol} {tm.label}
               </span>
-              <span
-                style={{
-                  fontSize: 9, fontWeight: 700, letterSpacing: "0.05em",
-                  textTransform: "uppercase", color: PRESSURE_COLORS[f.pressure],
-                }}
-              >
+              <span style={{
+                fontFamily: theme.mono, fontSize: 8, letterSpacing: "0.06em",
+                textTransform: "uppercase", color: pressureColor, opacity: 0.8,
+              }}>
                 {f.pressure} pressure
               </span>
             </div>
-            <p style={{ margin: "0 0 5px", fontWeight: 700, fontSize: 12, color: "#0f172a", lineHeight: 1.25 }}>
+
+            <p style={{
+              margin: "0 0 5px",
+              fontFamily: theme.font,
+              fontWeight: 700, fontSize: 12,
+              color: theme.textColor, lineHeight: 1.3,
+            }}>
               {f.name}
             </p>
-            <p style={{ margin: "0 0 9px", fontSize: 10.5, color: "#475569", lineHeight: 1.5 }}>
+            <p style={{
+              margin: "0 0 10px",
+              fontFamily: theme.font,
+              fontSize: 10.5, color: theme.subColor,
+              lineHeight: 1.55, fontStyle: "italic",
+            }}>
               {f.description}
             </p>
 
             {/* Response buttons */}
-            <div style={{ display: "flex", gap: 5 }}>
-              {RESPONSES.map((r) => (
-                <button
-                  key={r}
-                  disabled={disabled}
-                  onClick={() => !disabled && onResponse(f.factor_id, r)}
-                  title={RESPONSE_DESC[r]}
-                  style={{
-                    flex: 1,
-                    padding: "5px 4px",
-                    fontSize: 9,
-                    fontWeight: 700,
-                    letterSpacing: "0.05em",
-                    textTransform: "uppercase",
-                    border: response === r ? "2px solid #1e293b" : "1.5px solid #e2e8f0",
-                    borderRadius: 5,
-                    background: response === r ? "#1e293b" : "#f8fafc",
-                    color: response === r ? "#fff" : "#64748b",
-                    cursor: disabled ? "not-allowed" : "pointer",
-                    transition: "all 0.12s",
-                  }}
-                >
-                  {RESPONSE_LABELS[r]}
-                </button>
-              ))}
+            <div style={{ display: "flex", gap: 4 }}>
+              {RESPONSES.map((r) => {
+                const selected = response === r;
+                return (
+                  <button
+                    key={r}
+                    disabled={disabled}
+                    onClick={() => !disabled && onResponse(f.factor_id, r)}
+                    title={RESPONSE_DESC[r]}
+                    style={{
+                      flex: 1,
+                      padding: "5px 4px",
+                      fontFamily: theme.mono,
+                      fontSize: 8,
+                      fontWeight: 700,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                      border: `1px solid ${selected ? theme.textColor : theme.cardBorder}`,
+                      background: selected ? theme.textColor : "transparent",
+                      color: selected ? theme.bgColor : theme.subColor,
+                      cursor: disabled ? "not-allowed" : "pointer",
+                      transition: "all 0.12s",
+                    }}
+                    onMouseEnter={e => {
+                      if (!disabled && !selected) {
+                        e.currentTarget.style.borderColor = theme.textColor;
+                        e.currentTarget.style.color = theme.textColor;
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      if (!selected) {
+                        e.currentTarget.style.borderColor = theme.cardBorder;
+                        e.currentTarget.style.color = theme.subColor;
+                      }
+                    }}
+                  >
+                    {RESPONSE_LABELS[r]}
+                  </button>
+                );
+              })}
             </div>
+
             {response === "appeased" && (
-              <div style={{ fontSize: 9, color: "#7c3aed", marginTop: 5, fontStyle: "italic" }}>
-                ⚠ Appeasement costs −10 INT, −8 MOR
+              <div style={{
+                fontFamily: theme.mono, fontSize: 8,
+                color: "#8b1a1a", marginTop: 5, fontStyle: "italic",
+                letterSpacing: "0.04em",
+              }}>
+                ▲ Appeasement costs −10 INT, −8 MOR
               </div>
             )}
           </div>

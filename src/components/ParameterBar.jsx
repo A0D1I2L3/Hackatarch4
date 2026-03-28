@@ -1,59 +1,69 @@
 import React from "react";
 import { PARAMS } from "../engine/constants.js";
+import { useSettings } from "../context/SettingsContext.jsx";
 
 function clamp(v) { return Math.max(0, Math.min(100, v)); }
 
-function BarStat({ paramKey, value, prevValue }) {
+function BarStat({ paramKey, value, prevValue, theme }) {
   const p = PARAMS[paramKey];
   const delta = prevValue != null ? value - prevValue : 0;
   const pct = clamp(value);
   const danger = value <= p.collapseAt + 8;
   const great  = value >= p.achieveAt - 8;
-  const barColor = danger ? "#ef4444" : great ? "#22c55e" : p.color;
+  const barColor = danger ? "#8b1a1a" : great ? "#1a4a1a" : theme.accentGold;
 
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-        <span
-          style={{
-            fontFamily: "'Georgia', serif",
-            fontSize: 9, fontWeight: 700, letterSpacing: "0.08em",
-            textTransform: "uppercase", color: "#94a3b8",
-          }}
-        >
-          {p.icon} {p.symbol}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <span style={{
+          fontFamily: theme.mono, fontSize: 9, letterSpacing: "0.12em",
+          textTransform: "uppercase", color: theme.subColor,
+        }}>
+          {p.symbol}
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
           {delta !== 0 && (
-            <span
-              style={{
-                fontSize: 10, fontWeight: 700,
-                color: delta > 0 ? "#22c55e" : "#ef4444",
-                animation: "fadeIn 0.4s ease",
-              }}
-            >
+            <span style={{
+              fontFamily: theme.mono, fontSize: 10, fontWeight: 700,
+              color: delta > 0 ? "#1a5a1a" : "#8b1a1a",
+              animation: "fadeIn 0.4s ease",
+            }}>
               {delta > 0 ? "+" : ""}{delta}
             </span>
           )}
-          <span style={{ fontSize: 12, fontWeight: 800, color: danger ? "#ef4444" : "#e2e8f0" }}>
+          <span style={{
+            fontFamily: theme.font, fontSize: 13, fontWeight: 700,
+            color: danger ? "#8b1a1a" : theme.textColor,
+          }}>
             {Math.round(value)}
           </span>
         </div>
       </div>
-      <div style={{ height: 5, background: "#1e293b", borderRadius: 3, overflow: "hidden" }}>
-        <div
-          style={{
-            height: "100%",
-            width: `${pct}%`,
-            background: barColor,
-            borderRadius: 3,
-            transition: "width 0.9s cubic-bezier(0.4,0,0.2,1), background 0.5s",
-          }}
-        />
+
+      <div style={{ height: 4, background: theme.barBg, overflow: "hidden" }}>
+        <div style={{
+          height: "100%",
+          width: `${pct}%`,
+          background: barColor,
+          transition: "width 0.9s cubic-bezier(0.4,0,0.2,1), background 0.5s",
+        }} />
       </div>
+
+      <div style={{
+        fontFamily: theme.mono, fontSize: 8, letterSpacing: "0.06em",
+        textTransform: "uppercase", color: theme.subColor,
+        marginTop: 3, opacity: 0.75,
+      }}>
+        {p.label}
+      </div>
+
       {danger && (
-        <div style={{ fontSize: 8, color: "#ef4444", marginTop: 2, fontWeight: 700, letterSpacing: "0.05em" }}>
-          COLLAPSE RISK
+        <div style={{
+          fontFamily: theme.mono, fontSize: 7, color: "#8b1a1a",
+          marginTop: 2, fontWeight: 700, letterSpacing: "0.08em",
+          animation: "pulse-warn 1.2s ease infinite",
+        }}>
+          ▲ COLLAPSE RISK
         </div>
       )}
     </div>
@@ -61,19 +71,25 @@ function BarStat({ paramKey, value, prevValue }) {
 }
 
 export default function ParameterBar({ scores, prevScores }) {
+  const { theme } = useSettings();
+
   return (
-    <div
-      style={{
-        background: "#0f172a",
-        borderRadius: 10,
-        padding: "12px 16px",
-        display: "flex",
-        gap: 14,
-        alignItems: "flex-start",
-        border: "1px solid #1e293b",
-      }}
-    >
-      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#475569", whiteSpace: "nowrap", paddingTop: 2 }}>
+    <div style={{
+      background: theme.cardBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderTop: `2px solid ${theme.textColor}`,
+      padding: "10px 16px",
+      display: "flex",
+      gap: 16,
+      alignItems: "flex-start",
+    }}>
+      <div style={{
+        fontFamily: theme.mono, fontSize: 8, letterSpacing: "0.12em",
+        textTransform: "uppercase", color: theme.subColor,
+        whiteSpace: "nowrap", paddingTop: 2, lineHeight: 1.6,
+        borderRight: `1px solid ${theme.cardBorder}`,
+        paddingRight: 14,
+      }}>
         Newsroom<br />Status
       </div>
       {Object.keys(PARAMS).map((key) => (
@@ -82,6 +98,7 @@ export default function ParameterBar({ scores, prevScores }) {
           paramKey={key}
           value={scores[key]}
           prevValue={prevScores ? prevScores[key] : null}
+          theme={theme}
         />
       ))}
     </div>

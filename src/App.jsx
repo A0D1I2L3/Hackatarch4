@@ -244,7 +244,6 @@ export default function App() {
         className="top-bar"
         style={{
           background: theme.darkMode ? `${theme.cardBg}ee` : `${theme.bgColor}ee`,
-          borderBottom: `1px solid ${theme.cardBorder}`,
           backdropFilter: "blur(6px)",
         }}
       >
@@ -282,24 +281,16 @@ export default function App() {
             <button
               onClick={() => setSettingsOpen(true)}
               title="Customize newsroom"
+              className="customize-btn"
               style={{
-                display: "flex", alignItems: "center", gap: 6,
-                padding: "6px 12px",
-                background: "transparent",
-                border: `1.5px solid ${theme.cardBorder}`,
-                borderRadius: 5,
-                fontFamily: theme.mono,
-                fontSize: 10, letterSpacing: 1.5,
                 color: theme.subColor,
-                cursor: "pointer",
-                transition: "all 0.15s",
-                whiteSpace: "nowrap",
-                flexShrink: 0,
+                borderColor: theme.cardBorder,
+                fontFamily: theme.mono,
               }}
               onMouseEnter={e => {
-                e.currentTarget.style.borderColor = theme.accentGold;
+                e.currentTarget.style.borderColor = theme.textColor;
                 e.currentTarget.style.color = theme.textColor;
-                e.currentTarget.style.background = theme.darkMode ? "#2a2620" : "#fdf8f0";
+                e.currentTarget.style.background = theme.barBg;
               }}
               onMouseLeave={e => {
                 e.currentTarget.style.borderColor = theme.cardBorder;

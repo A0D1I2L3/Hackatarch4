@@ -49,16 +49,16 @@ function computeWeight(item) {
 //  TAG COLOURS
 // ─────────────────────────────────────────────────────────────
 const TAG_COLORS = {
-  Investigative: { bg: "#fef2f2", color: "#991b1b" },
-  Politics:      { bg: "#dbeafe", color: "#1e40af" },
-  Crime:         { bg: "#fef2f2", color: "#7f1d1d" },
-  Culture:       { bg: "#fdf4ff", color: "#7e22ce" },
-  Health:        { bg: "#f0fdf4", color: "#166534" },
-  Business:      { bg: "#f8fafc", color: "#334155" },
-  Environment:   { bg: "#ccfbf1", color: "#0f766e" },
-  Technology:    { bg: "#ede9fe", color: "#6d28d9" },
-  Staff:         { bg: "#fff7ed", color: "#c2410c" },
-  default:       { bg: "#f1f5f9", color: "#475569" },
+  Investigative: { bg: "transparent", color: "#8b1a1a" },
+  Politics:      { bg: "transparent", color: "#1a3a8b" },
+  Crime:         { bg: "transparent", color: "#5a1a1a" },
+  Culture:       { bg: "transparent", color: "#4a1a6a" },
+  Health:        { bg: "transparent", color: "#1a5a2a" },
+  Business:      { bg: "transparent", color: "#3a3a1a" },
+  Environment:   { bg: "transparent", color: "#1a5a4a" },
+  Technology:    { bg: "transparent", color: "#1a2a7a" },
+  Staff:         { bg: "transparent", color: "#7a3a1a" },
+  default:       { bg: "transparent", color: "#5a5040" },
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -454,10 +454,10 @@ export default function NewspaperGrid({ draggedStory, onGridChange, published, t
                 onClick={() => handleRemove(item.id)}
                 style={{
                   position:"absolute", top:4, right:4,
-                  background:"#fee2e2", border:"none", borderRadius:"50%",
+                  background: theme.cardBorder, border:"none", borderRadius:"50%",
                   width:16, height:16, cursor:"pointer",
                   display:"flex", alignItems:"center", justifyContent:"center",
-                  fontSize:10, color:"#b91c1c", lineHeight:1, padding:0,
+                  fontSize:10, color: theme.textColor, lineHeight:1, padding:0,
                   zIndex:12, flexShrink:0,
                 }}
               >
@@ -469,8 +469,8 @@ export default function NewspaperGrid({ draggedStory, onGridChange, published, t
             <div
               style={{
                 position:"absolute", bottom:4, right:4,
-                background: theme.darkMode ? theme.barBg : "#1e293b",
-                color: "#86efac",
+                background: theme.textColor,
+                color: theme.bgColor,
                 fontSize:8, fontWeight:700,
                 padding:"2px 5px", borderRadius:3,
                 letterSpacing:"0.05em", zIndex:12,
@@ -561,7 +561,7 @@ export default function NewspaperGrid({ draggedStory, onGridChange, published, t
       {items.length >= MAX_HEADLINES && (
         <div style={{
           position:"absolute", bottom:0, left:0, right:0,
-          background: theme.darkMode ? "#e8e4dbcc" : "#1e293bcc", color: theme.darkMode ? "#1a1a1a" : "#86efac",
+          background: theme.textColor + "dd", color: theme.bgColor,
           fontSize:9, textAlign:"center", padding:"4px 0",
           letterSpacing:"0.08em", pointerEvents:"none", zIndex:20,
         }}>

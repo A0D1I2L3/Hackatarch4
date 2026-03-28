@@ -1,91 +1,100 @@
 import React from "react";
+import { useSettings } from "../context/SettingsContext.jsx";
 
-const TAG_COLORS = {
-  Investigative: { bg: "#fef2f2", color: "#991b1b" },
-  Politics:      { bg: "#dbeafe", color: "#1e40af" },
-  Crime:         { bg: "#fef2f2", color: "#7f1d1d" },
-  Culture:       { bg: "#fdf4ff", color: "#7e22ce" },
-  Health:        { bg: "#f0fdf4", color: "#166534" },
-  Business:      { bg: "#f8fafc", color: "#334155" },
-  Environment:   { bg: "#ccfbf1", color: "#0f766e" },
-  Technology:    { bg: "#ede9fe", color: "#6d28d9" },
-  Staff:         { bg: "#fff7ed", color: "#c2410c" },
-  default:       { bg: "#f1f5f9", color: "#475569" },
+const TAG_STYLES = {
+  Investigative: { border: "#8b1a1a", label: "#8b1a1a" },
+  Politics:      { border: "#1a3a8b", label: "#1a3a8b" },
+  Crime:         { border: "#5a1a1a", label: "#5a1a1a" },
+  Culture:       { border: "#4a1a6a", label: "#4a1a6a" },
+  Health:        { border: "#1a5a2a", label: "#1a5a2a" },
+  Business:      { border: "#3a3a2a", label: "#3a3a2a" },
+  Environment:   { border: "#1a5a4a", label: "#1a5a4a" },
+  Technology:    { border: "#2a2a7a", label: "#2a2a7a" },
+  Staff:         { border: "#7a3a1a", label: "#7a3a1a" },
+  default:       { border: "#5a5040", label: "#5a5040" },
 };
 
-const EXPLOSIVE_DOTS = (n) =>
+const EXPLOSIVE_DOTS = (n, theme) =>
   Array.from({ length: 5 }, (_, i) => (
     <span
       key={i}
       style={{
         display: "inline-block",
-        width: 7, height: 7,
+        width: 6, height: 6,
         borderRadius: "50%",
-        background: i < n ? "#ef4444" : "#e2e8f0",
+        background: i < n ? "#8b1a1a" : theme.barBg,
         marginRight: 2,
+        border: `1px solid ${i < n ? "#8b1a1a" : theme.cardBorder}`,
       }}
     />
   ));
 
 export default function StoryCard({ story, onDragStart, dragging, compact }) {
+  const { theme } = useSettings();
   if (!story) return null;
-  const tagStyle = TAG_COLORS[story.tag] || TAG_COLORS.default;
+  const ts = TAG_STYLES[story.tag] || TAG_STYLES.default;
 
   return (
     <div
       draggable
       onDragStart={(e) => onDragStart(e, story)}
       style={{
-        background: "#fff",
-        border: "1.5px solid #e2e8f0",
-        borderLeft: `4px solid ${tagStyle.color}`,
-        borderRadius: 8,
+        background: theme.cardBg,
+        border: `1px solid ${theme.cardBorder}`,
+        borderLeft: `3px solid ${ts.border}`,
         padding: compact ? "8px 10px" : "11px 13px",
         marginBottom: 8,
         cursor: "grab",
         opacity: dragging ? 0.35 : 1,
         transition: "box-shadow 0.15s, transform 0.15s",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
         userSelect: "none",
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = "0 4px 14px rgba(0,0,0,0.13)";
-        e.currentTarget.style.transform = "translateY(-1px)";
+        e.currentTarget.style.transform = "translateX(2px)";
+        e.currentTarget.style.borderLeftColor = theme.textColor;
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.06)";
-        e.currentTarget.style.transform = "translateY(0)";
+        e.currentTarget.style.transform = "translateX(0)";
+        e.currentTarget.style.borderLeftColor = ts.border;
       }}
     >
-      {/* Tag + explosive rating */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
-        <span
-          style={{
-            fontSize: 9, fontWeight: 700, letterSpacing: "0.07em",
-            textTransform: "uppercase", padding: "2px 6px", borderRadius: 3,
-            background: tagStyle.bg, color: tagStyle.color,
-          }}
-        >
+        <span style={{
+          fontFamily: theme.mono, fontSize: 8, letterSpacing: "0.1em",
+          textTransform: "uppercase", color: ts.label,
+          border: `1px solid ${ts.border}22`,
+          padding: "1px 5px",
+        }}>
           {story.tag}
         </span>
-        <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
-          {EXPLOSIVE_DOTS(story.explosive_rating)}
+        <div style={{ display: "flex", alignItems: "center" }}>
+          {EXPLOSIVE_DOTS(story.explosive_rating, theme)}
         </div>
       </div>
 
-      {/* Headline */}
-      <p
-        style={{
-          margin: "0 0 4px", fontWeight: 800, fontSize: compact ? 11 : 12.5,
-          color: "#0f172a", lineHeight: 1.25, fontFamily: "'Georgia', serif",
-        }}
-      >
-        {story.headline && story.headline.length > 80 ? story.headline.slice(0, 80) + "…" : story.headline}
+      <p style={{
+        margin: "0 0 4px",
+        fontFamily: theme.font,
+        fontWeight: 700,
+        fontSize: compact ? 11 : 12.5,
+        color: theme.textColor,
+        lineHeight: 1.3,
+      }}>
+        {story.headline && story.headline.length > 80
+          ? story.headline.slice(0, 80) + "…"
+          : story.headline}
       </p>
 
-      {/* Emotional register */}
       {!compact && (
-        <p style={{ margin: 0, fontSize: 10, color: "#94a3b8", fontStyle: "italic", lineHeight: 1.4 }}>
+        <p style={{
+          margin: 0,
+          fontFamily: theme.mono,
+          fontSize: 9,
+          color: theme.subColor,
+          fontStyle: "italic",
+          lineHeight: 1.4,
+          letterSpacing: "0.02em",
+        }}>
           {story.emotional_register}
         </p>
       )}

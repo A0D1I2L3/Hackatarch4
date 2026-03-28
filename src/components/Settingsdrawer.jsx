@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSettings, FONT_OPTIONS, BG_OPTIONS } from "../context/SettingsContext.jsx";
 
 // ─────────────────────────────────────────────────────────────
@@ -52,12 +52,14 @@ export default function SettingsDrawer({ open, onClose }) {
   const [localSlogan, setLocalSlogan] = useState(settings.paperSlogan);
   const [localEditor, setLocalEditor] = useState(settings.editorName);
 
-  // Sync local fields when drawer re-opens
-  const handleOpen = () => {
-    setLocalName(settings.paperName);
-    setLocalSlogan(settings.paperSlogan);
-    setLocalEditor(settings.editorName);
-  };
+  // Sync local fields only when the drawer opens
+  useEffect(() => {
+    if (open) {
+      setLocalName(settings.paperName);
+      setLocalSlogan(settings.paperSlogan);
+      setLocalEditor(settings.editorName);
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleSave() {
     updateSettings({
@@ -122,7 +124,6 @@ export default function SettingsDrawer({ open, onClose }) {
           fontFamily: theme.font, color: theme.textColor,
           overflowY: "auto",
         }}
-        onTransitionEnd={() => { if (open) handleOpen(); }}
       >
         {/* Header */}
         <div style={{
