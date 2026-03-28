@@ -48,6 +48,10 @@ export const useGameStore = create((set, get) => ({
   isLoading: false,
   error: null,
   lastDecision: null, // { decision, impact, narrative }
+<<<<<<< HEAD
+=======
+  decisions: [],
+>>>>>>> 144e1fc (initial)
   gameOver: false,
   gameOverReason: null,
   phase: "decision", // "decision" | "result"
@@ -101,6 +105,7 @@ export const useGameStore = create((set, get) => ({
     const nextIndex = currentStoryIndex + 1;
 
     if (nextIndex >= stories.length) {
+<<<<<<< HEAD
       // Reshuffle and loop
       const reshuffled = [...stories].sort(() => Math.random() - 0.5);
       set({
@@ -120,6 +125,19 @@ export const useGameStore = create((set, get) => ({
         lastDecision: null,
       });
     }
+=======
+      // End of stories — App will handle transition to ending
+      return;
+    }
+
+    set({
+      currentStory: stories[nextIndex],
+      currentStoryIndex: nextIndex,
+      day: day + 1,
+      phase: "decision",
+      lastDecision: null,
+    });
+>>>>>>> 144e1fc (initial)
   },
 
   resetGame: () => {
@@ -129,6 +147,10 @@ export const useGameStore = create((set, get) => ({
       metrics: { ...INITIAL_METRICS },
       day: 1,
       lastDecision: null,
+<<<<<<< HEAD
+=======
+      decisions: [],
+>>>>>>> 144e1fc (initial)
       gameOver: false,
       gameOverReason: null,
       phase: "decision",

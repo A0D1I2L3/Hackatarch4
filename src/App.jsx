@@ -130,6 +130,10 @@ function ChoiceBtn({ decision, onSelect, disabled }) {
     delay:   "Hold the story pending additional verification. Minor revenue loss. Moderate risk reduction.",
   };
   const impactLabels = { trust: "TRUST", revenue: "REVENUE", safety: "SAFETY", legalRisk: "LEGAL", politicalPressure: "POL." };
+<<<<<<< HEAD
+=======
+  const invertedKeys = new Set(["legalRisk", "politicalPressure"]);
+>>>>>>> 144e1fc (initial)
   const cfg = configs[decision.id] || configs.publish;
   return (
     <div
@@ -150,6 +154,7 @@ function ChoiceBtn({ decision, onSelect, disabled }) {
           <div style={{ fontFamily: "'Special Elite',monospace", fontSize: 9, color: "var(--fade)", letterSpacing: 1 }}>{cfg.sub}</div>
         </div>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: 200 }}>
+<<<<<<< HEAD
           {Object.entries(decision.impact || {}).map(([k, v]) => (
             <span key={k} style={{
               fontFamily: "'Special Elite',monospace", fontSize: 8, padding: "2px 6px", borderRadius: 3, whiteSpace: "nowrap",
@@ -157,6 +162,18 @@ function ChoiceBtn({ decision, onSelect, disabled }) {
               color: v > 0 ? "#1a5c2a" : v < 0 ? "#8b1a1a" : "var(--fade)", border: "1px solid currentColor"
             }}>{v > 0 ? "+" : ""}{v} {impactLabels[k] || k.toUpperCase()}</span>
           ))}
+=======
+          {Object.entries(decision.impact || {}).map(([k, v]) => {
+            const displayV = invertedKeys.has(k) ? -v : v;
+            return (
+              <span key={k} style={{
+                fontFamily: "'Special Elite',monospace", fontSize: 8, padding: "2px 6px", borderRadius: 3, whiteSpace: "nowrap",
+                background: displayV > 0 ? "rgba(26,92,42,0.1)" : displayV < 0 ? "rgba(139,26,26,0.1)" : "rgba(0,0,0,0.05)",
+                color: displayV > 0 ? "#1a5c2a" : displayV < 0 ? "#8b1a1a" : "var(--fade)", border: "1px solid currentColor"
+              }}>{displayV > 0 ? "+" : ""}{displayV} {impactLabels[k] || k.toUpperCase()}</span>
+            );
+          })}
+>>>>>>> 144e1fc (initial)
         </div>
       </div>
       <div style={{ fontFamily: "'Libre Baskerville',serif", fontSize: 13.5, lineHeight: 1.65, color: "#333" }}>{descs[decision.id] || cfg.sub}</div>
@@ -263,9 +280,15 @@ function EndingScreen({ onRestart }) {
   const [ph, setPh] = useState(0);
   const stats = { integrity: metrics.trust, revenue: metrics.revenue, trust: metrics.trust, heat: metrics.politicalPressure, reputation: Math.max(0, 100 - metrics.legalRisk) };
   const ending = ENDINGS.find(e => e.test(stats)) || ENDINGS[ENDINGS.length - 1];
+<<<<<<< HEAD
   const pub = decisions.filter(d => d.decision === "publish").length;
   const rej = decisions.filter(d => d.decision === "reject").length;
   const spn = decisions.filter(d => d.decision === "spin").length;
+=======
+  const pub = (decisions || []).filter(d => d.decision === "publish").length;
+  const rej = (decisions || []).filter(d => d.decision === "reject").length;
+  const spn = (decisions || []).filter(d => d.decision === "spin").length;
+>>>>>>> 144e1fc (initial)
   useEffect(() => {
     const ts = [setTimeout(() => setPh(1), 500), setTimeout(() => setPh(2), 1200), setTimeout(() => setPh(3), 2200), setTimeout(() => setPh(4), 3400)];
     return () => ts.forEach(clearTimeout);
@@ -277,7 +300,11 @@ function EndingScreen({ onRestart }) {
       <div style={{ maxWidth: 720, margin: "0 auto", padding: "48px 24px 60px" }}>
         {ph >= 1 && <div style={{ textAlign: "center", marginBottom: 36, animation: "fadeIn 0.8s ease" }}>
           <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 88, color: ending.accent, lineHeight: 1, marginBottom: 10, animation: "stampIn 0.7s cubic-bezier(0.34,1.56,0.64,1)" }}>{ending.symbol}</div>
+<<<<<<< HEAD
           <div style={{ fontFamily: "'Special Elite',monospace", fontSize: 9, letterSpacing: 4, color: ending.accent, marginBottom: 14 }}>AFTER {day - 1} STORIES — YOUR VERDICT</div>
+=======
+          <div style={{ fontFamily: "'Special Elite',monospace", fontSize: 9, letterSpacing: 4, color: ending.accent, marginBottom: 14 }}>AFTER {(decisions || []).length} STORIES — YOUR VERDICT</div>
+>>>>>>> 144e1fc (initial)
           <h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: 40, fontWeight: 900, lineHeight: 1.1, color: ending.color, marginBottom: 12 }}>{ending.title}</h1>
           <div style={{ display: "inline-block", background: ending.color, color: "#fff", fontFamily: "'Special Elite',monospace", fontSize: 18, padding: "5px 22px", borderRadius: 4, letterSpacing: 4 }}>{ending.grade}</div>
         </div>}
@@ -313,7 +340,11 @@ function EndingScreen({ onRestart }) {
           </div>
         </div>}
         {ph >= 3 && <div style={{ background: "rgba(255,255,255,0.55)", border: `1px solid ${ending.accent}33`, borderRadius: 8, padding: "24px 28px", marginBottom: 20, animation: "slideUp 0.5s ease" }}>
+<<<<<<< HEAD
           <div style={{ fontFamily: "'Special Elite',monospace", fontSize: 9, letterSpacing: 3, color: ending.accent, marginBottom: 6 }}>◆ THESE {day - 1} DAYS</div>
+=======
+          <div style={{ fontFamily: "'Special Elite',monospace", fontSize: 9, letterSpacing: 3, color: ending.accent, marginBottom: 6 }}>◆ THESE {(decisions || []).length} STORIES</div>
+>>>>>>> 144e1fc (initial)
           <blockquote style={{ fontFamily: "'Playfair Display',serif", fontStyle: "italic", fontSize: 13, color: "var(--fade)", borderLeft: `3px solid ${ending.accent}55`, paddingLeft: 14, marginBottom: 20, lineHeight: 1.65 }}>{ending.epigraph}</blockquote>
           {paras.map((p, i) => <p key={i} style={{ fontFamily: "'Libre Baskerville',serif", fontSize: 14.5, lineHeight: 1.9, color: "#333", marginBottom: i < paras.length - 1 ? 18 : 0 }}>{p}</p>)}
         </div>}
@@ -331,11 +362,20 @@ function getPreviewImpacts(story) {
   const v = story.viralityScore / 100;
   const e = eW[story.evidence] ?? 0.5;
   const r = rW[story.riskLevel] ?? 0.5;
+<<<<<<< HEAD
   return [
     { id: "publish", impact: { trust: Math.round((t * 0.6 + e * 0.4) * 20 * (1 + v * 0.5)), revenue: Math.round(v * 18 + t * 5), legalRisk: -Math.round((1 - e) * 25 + r * 15), safety: -Math.round(r * 12) } },
     { id: "spin",    impact: { revenue: Math.round(v * 22 + 5), trust: -Math.round((1 - t) * 18 + 8), legalRisk: -Math.round((1 - e) * 20 + 5), safety: Math.round(r * 3) } },
     { id: "reject",  impact: { legalRisk: Math.round(r * 8), safety: Math.round(r * 6), revenue: -Math.round(v * 10), trust: -Math.round((1 - t) * 5) } },
     { id: "delay",   impact: { revenue: -Math.round(v * 5 + 3), legalRisk: Math.round(e * 10), safety: Math.round(r * 4), trust: Math.round(t * 4 - 2) } },
+=======
+  // Signs match decisionEngine: legalRisk positive = more legal risk (bad), safety negative = loss
+  return [
+    { id: "publish", impact: { trust: Math.round((t * 0.6 + e * 0.4) * 20 * (1 + v * 0.5)), revenue: Math.round(v * 18 + t * 5), legalRisk: Math.round((1 - e) * 25 + r * 15), safety: -Math.round(r * 12) } },
+    { id: "spin",    impact: { revenue: Math.round(v * 22 + 5), trust: -Math.round((1 - t) * 18 + 8), legalRisk: Math.round((1 - e) * 20 + 5), safety: Math.round(r * 3) } },
+    { id: "reject",  impact: { legalRisk: -Math.round(r * 8), safety: Math.round(r * 6), revenue: -Math.round(v * 10), trust: -Math.round((1 - t) * 5) } },
+    { id: "delay",   impact: { revenue: -Math.round(v * 5 + 3), legalRisk: -Math.round(e * 10), safety: Math.round(r * 4), trust: Math.round(t * 4 - 2) } },
+>>>>>>> 144e1fc (initial)
   ];
 }
 
@@ -348,7 +388,11 @@ export default function App() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => { fetchStories(); }, []);
+<<<<<<< HEAD
   useEffect(() => { if (gameOver) setAppPhase("ending"); }, [gameOver]);
+=======
+  useEffect(() => { if (gameOver && appPhase !== "consequence" && appPhase !== "ending") setAppPhase("ending"); }, [gameOver, appPhase]);
+>>>>>>> 144e1fc (initial)
   useEffect(() => { setVisible(false); const t = setTimeout(() => setVisible(true), 80); return () => clearTimeout(t); }, [currentStory?.id, appPhase]);
   useEffect(() => { setShowPressure(false); setChoosing(false); }, [currentStory?.id]);
 
@@ -362,7 +406,11 @@ export default function App() {
 
   function handleContinue() {
     const isLast = currentStoryIndex >= stories.length - 1;
+<<<<<<< HEAD
     if (isLast) { setAppPhase("ending"); }
+=======
+    if (gameOver || isLast) { setAppPhase("ending"); }
+>>>>>>> 144e1fc (initial)
     else { advanceToNextStory(); setAppPhase("game"); }
   }
 
@@ -378,8 +426,13 @@ export default function App() {
 
   /* CONSEQUENCE */
   if (appPhase === "consequence" && lastDecision) {
+<<<<<<< HEAD
     const enriched = { ...lastDecision, day, storyTitle: currentStory?.title };
     const isLast = currentStoryIndex >= stories.length - 1;
+=======
+    const enriched = { ...lastDecision, storyTitle: currentStory?.title };
+    const isLast = gameOver || currentStoryIndex >= stories.length - 1;
+>>>>>>> 144e1fc (initial)
     return (<><G /><div className="noise" /><ConsequenceScreen lastDecision={enriched} storyTitle={currentStory?.title} onContinue={handleContinue} isLast={isLast} /></>);
   }
 

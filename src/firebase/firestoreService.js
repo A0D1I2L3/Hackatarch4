@@ -99,7 +99,19 @@ const SEED_STORIES = [
 
 export async function fetchStoriesFromFirestore() {
   const storiesRef = collection(db, "stories");
+<<<<<<< HEAD
   const snapshot = await getDocs(query(storiesRef, orderBy("title"), limit(50)));
+=======
+
+  let snapshot;
+  try {
+    snapshot = await getDocs(query(storiesRef, orderBy("title"), limit(50)));
+  } catch (err) {
+    // Firestore index may not be set up — fall back to unordered fetch
+    console.warn("Ordered query failed, falling back to unordered:", err.message);
+    snapshot = await getDocs(query(storiesRef, limit(50)));
+  }
+>>>>>>> 144e1fc (initial)
 
   if (snapshot.empty) {
     // Seed the collection
