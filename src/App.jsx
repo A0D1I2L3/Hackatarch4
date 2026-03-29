@@ -23,6 +23,7 @@ import EndingScreen from "./components/EndingScreen.jsx";
 import LoadingScreen from "./components/LoadingScreen.jsx";
 import FactorIntroScreen from "./components/FactorIntroScreen.jsx";
 import SettingsDrawer from "./components/SettingsDrawer.jsx";
+import IntroScreen from "./components/IntroScreen.jsx";
 import { useSettings } from "./context/SettingsContext.jsx";
 
 import "./App.css";
@@ -41,7 +42,7 @@ const MAX_DAYS = 7;
 export default function App() {
   const { settings, theme } = useSettings();
 
-  const [phase, setPhase] = useState("story_delivery");
+  const [phase, setPhase] = useState("intro");
   const [dayData, setDayData] = useState(DAY_1_SEED);
   const [dayNumber, setDayNumber] = useState(1);
   const [scores, setScores] = useState({ ...INITIAL_SCORES });
@@ -49,6 +50,7 @@ export default function App() {
   const [slots, setSlots] = useState(makeInitialSlots());
   const [draggedStory, setDraggedStory] = useState(null);
   const [gridItems, setGridItems] = useState([]);
+  const [gridIsFull, setGridIsFull] = useState(false);
   const [factorResponses, setFactorResponses] = useState(
     makeInitialResponses(DAY_1_SEED.external_factors),
   );
@@ -67,14 +69,15 @@ export default function App() {
     (s) => !placedIds.has(s.story_id),
   );
   const placedCount = gridItems.length;
-  const allSlotsPlaced = placedCount >= 1;
+  const allSlotsPlaced = placedCount >= 1 && gridIsFull;
   const handleDragStart = useCallback((e, story) => {
     setDraggedStory(story);
     e.dataTransfer.effectAllowed = "move";
   }, []);
 
-  const handleGridChange = useCallback((items) => {
+  const handleGridChange = useCallback((items, isFull) => {
     setGridItems(items);
+    setGridIsFull(!!isFull);
   }, []);
 
   const handleFactorResponse = useCallback((factorId, response) => {
@@ -163,6 +166,7 @@ export default function App() {
     setDayData(nextDayData);
     setSlots(makeInitialSlots());
     setGridItems([]);
+    setGridIsFull(false);
     setFactorResponses(makeInitialResponses(nextDayData?.external_factors));
     setPartA(null);
     setNextDayData(null);
@@ -178,6 +182,7 @@ export default function App() {
     setSlots(makeInitialSlots());
     setDraggedStory(null);
     setGridItems([]);
+    setGridIsFull(false);
     setFactorResponses(makeInitialResponses(DAY_1_SEED.external_factors));
     setArcFlags([]);
     setPartA(null);
@@ -262,6 +267,16 @@ export default function App() {
           factors={nextDayData.external_factors || []}
           onDone={handleFactorIntroDone}
         />
+      </>
+    );
+  }
+
+  // ── Intro screen ───────────────────────────────────────────
+  if (phase === "intro") {
+    return (
+      <>
+        {settingsDrawer}
+        <IntroScreen onStart={() => setPhase("story_delivery")} />
       </>
     );
   }
@@ -490,7 +505,9 @@ export default function App() {
             >
               {allSlotsPlaced
                 ? `◆ Send to Print · ${placedCount} headline${placedCount !== 1 ? "s" : ""}`
-                : "Place at least 1 headline to publish"}
+                : placedCount >= 1
+                  ? "⬜ Fill all white space before publishing"
+                  : "Drag a story onto the front page to begin"}
             </button>
           </div>
         </div>

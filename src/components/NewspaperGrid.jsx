@@ -152,6 +152,7 @@ export default function NewspaperGrid({
   const [hoverEdge, setHoverEdge] = useState(null);
   // ── CHANGE 3: track if something is being dragged over delete zone
   const [deleteZoneActive, setDeleteZoneActive] = useState(false);
+  const [draggingCardId, setDraggingCardId] = useState(null);
 
   const gridRef = useRef(null);
 
@@ -204,13 +205,42 @@ export default function NewspaperGrid({
     (e) => {
       e.preventDefault();
       setHoverCell(null);
+      // Ignore if this was a placed-card drag (handled by delete zone / card logic)
       if (!draggedStory) return;
-      if (items.length >= MAX_HEADLINES) return;
+      // Ignore if already placed (same story being re-dropped — no-op)
       if (items.some((it) => it.story.story_id === draggedStory.story_id))
         return;
 
       const cell = pxToCell(e.clientX, e.clientY);
       if (!cell) return;
+
+      // Check if dropping onto an existing placed card
+      const targetItem = items.find(
+        (it) =>
+          cell.col >= it.col &&
+          cell.col < it.col + it.w &&
+          cell.row >= it.row &&
+          cell.row < it.row + it.h,
+      );
+
+      if (targetItem) {
+        // REPLACE: swap out the card under the cursor, keep its position + size
+        setItems((prev) =>
+          prev.map((it) =>
+            it.id === targetItem.id
+              ? {
+                  ...it,
+                  id: draggedStory.story_id,
+                  story: draggedStory,
+                }
+              : it,
+          ),
+        );
+        return;
+      }
+
+      // DROP INTO EMPTY SPACE
+      if (items.length >= MAX_HEADLINES) return; // grid full, no free slot
 
       let { col, row } = cell;
       if (!canPlace(items, col, row, DEFAULT_W, DEFAULT_H)) {
@@ -240,19 +270,19 @@ export default function NewspaperGrid({
     setItems((prev) => prev.filter((it) => it.id !== id));
   }, []);
 
-  // ── CHANGE 2: Double-click to auto-fill available space ───
+  // ── Double-click: toggle between fully-expanded and DEFAULT size ──────────
   const handleDoubleClick = useCallback((e, id) => {
     e.stopPropagation();
     setItems((prev) => {
       const item = prev.find((it) => it.id === id);
       if (!item) return prev;
       const others = prev.filter((it) => it.id !== id);
-      // Expand from item's current origin in all directions greedily
-      let bestW = item.w;
-      let bestH = item.h;
-      // Try expanding width first, then height
-      for (let w = item.w; w <= COLS - item.col; w++) {
-        for (let h = item.h; h <= ROWS - item.row; h++) {
+
+      // Greedy-expand: find the largest (w,h) that fits from this origin
+      let bestW = DEFAULT_W;
+      let bestH = DEFAULT_H;
+      for (let w = DEFAULT_W; w <= COLS - item.col; w++) {
+        for (let h = DEFAULT_H; h <= ROWS - item.row; h++) {
           if (canPlace(others, item.col, item.row, w, h)) {
             bestW = w;
             bestH = h;
@@ -261,6 +291,22 @@ export default function NewspaperGrid({
           }
         }
       }
+
+      // If already at the expanded size (or larger), shrink back to default
+      const alreadyExpanded = item.w >= bestW && item.h >= bestH;
+      if (alreadyExpanded) {
+        // Collapse — make sure the default size still fits at the current origin
+        const collapseW = DEFAULT_W;
+        const collapseH = DEFAULT_H;
+        if (canPlace(others, item.col, item.row, collapseW, collapseH)) {
+          return prev.map((it) =>
+            it.id === id ? { ...it, w: collapseW, h: collapseH } : it,
+          );
+        }
+        return prev; // can't collapse for some reason, leave as-is
+      }
+
+      // Expand to best available size
       return prev.map((it) =>
         it.id === id ? { ...it, w: bestW, h: bestH } : it,
       );
@@ -442,13 +488,38 @@ export default function NewspaperGrid({
     };
   }
 
-  // ── CHANGE 1: auto font size based on card area AND headline length ──
+  // ── Auto font size: properly scales with card area and headline length ──
   function autoFontSize(item) {
+    const area = item.w * item.h; // grid-cell area (1–100)
+    const len = item.story.headline.length; // character count
+    // Base grows with card area; shrinks for long headlines
+    // Clamp: 7px minimum (tiny card) → 22px maximum (hero card)
+    const base = 5 + area * 1.1;
+    const scaled = base * (30 / Math.max(len, 20));
+    return Math.max(7, Math.min(22, scaled));
+  }
+
+  // ── Auto deck (subheading) font size ─────────────────────────────────────
+  // Deck is always visually subordinate to the headline but must scale with
+  // the card so it reads legibly on large cards and stays quiet on small ones.
+  function autoDeckFontSize(item) {
     const area = item.w * item.h;
-    const len = item.story.headline.length;
-    const base = area * 2.2;
-    const scaled = base / (len / 12);
-    return Math.max(7, Math.min(18, scaled));
+    const headlinePx = autoFontSize(item); // deck is always < headline
+    const len = (item.story.deck || "").length;
+    // Scale from ~60% of headline size on small cards to ~75% on large ones
+    const ratio = 0.6 + Math.min(area / 80, 0.15); // 0.60–0.75
+    const base = headlinePx * ratio;
+    // Nudge down for very long deck text so it still fits
+    const lengthPenalty = Math.max(0, (len - 60) * 0.04);
+    return Math.max(7, Math.min(14, base - lengthPenalty));
+  }
+
+  // ── Deck line clamp: how many deck lines to allow based on card height ────
+  function deckLineClamp(item) {
+    if (item.h <= 3) return 2;
+    if (item.h <= 5) return 3;
+    if (item.h <= 7) return 4;
+    return 5;
   }
 
   // ─────────────────────────────────────────────────────────
@@ -548,6 +619,18 @@ export default function NewspaperGrid({
         return (
           <div
             key={item.id}
+            draggable={!published && !resizing}
+            onDragStart={(e) => {
+              if (published || resizing) {
+                e.preventDefault();
+                return;
+              }
+              // Set a ghost image so the card looks like it's being picked up
+              e.dataTransfer.effectAllowed = "move";
+              e.dataTransfer.setData("text/plain", item.id);
+              setDraggingCardId(item.id);
+            }}
+            onDragEnd={() => setDraggingCardId(null)}
             onPointerMove={(e) => handleCardPointerMove(e, item.id)}
             onPointerLeave={handleCardPointerLeave}
             onPointerDown={(e) => handleCardPointerDown(e, item.id)}
@@ -566,9 +649,15 @@ export default function NewspaperGrid({
               flexDirection: "column",
               boxShadow: isResizingThis
                 ? "0 4px 20px rgba(0,0,0,0.25)"
-                : "0 2px 8px rgba(0,0,0,0.12)",
-              transition: isResizingThis ? "none" : "box-shadow 0.15s",
+                : draggingCardId === item.id
+                  ? "0 8px 28px rgba(0,0,0,0.30)"
+                  : "0 2px 8px rgba(0,0,0,0.12)",
+              opacity: draggingCardId === item.id ? 0.45 : 1,
+              transition: isResizingThis
+                ? "none"
+                : "box-shadow 0.15s, opacity 0.15s",
               touchAction: "none",
+              cursor: resizing ? undefined : "grab",
             }}
           >
             {/* Edge highlight strips */}
@@ -712,38 +801,43 @@ export default function NewspaperGrid({
               )}
             </div>
 
-            {/* CHANGE 1: Headline with auto font size */}
+            {/* Headline with proper auto font size */}
             <p
               style={{
                 margin: 0,
                 fontWeight: 800,
                 fontSize: autoFontSize(item),
                 color: theme.textColor,
-                lineHeight: 1.2,
+                lineHeight: 1.15,
                 fontFamily: theme.font,
                 overflow: "hidden",
                 display: "-webkit-box",
-                WebkitLineClamp: Math.max(2, item.h * 2),
+                // clamp lines based on card height & font size so text never overflows
+                WebkitLineClamp: Math.max(2, Math.floor(item.h * 1.8)),
                 WebkitBoxOrient: "vertical",
                 flexShrink: 1,
+                wordBreak: "break-word",
               }}
             >
               {item.story.headline}
             </p>
 
-            {/* Deck — only when large enough */}
-            {item.w >= 2 && item.h >= 3 && (
+            {/* Deck — scales with card size */}
+            {item.w >= 2 && item.h >= 3 && item.story.deck && (
               <p
                 style={{
                   margin: "4px 0 0",
-                  fontSize: 8,
+                  fontSize: autoDeckFontSize(item),
                   color: theme.subColor,
-                  lineHeight: 1.4,
+                  lineHeight: 1.45,
                   fontStyle: "italic",
+                  fontFamily: theme.font,
                   overflow: "hidden",
                   display: "-webkit-box",
-                  WebkitLineClamp: item.h,
+                  WebkitLineClamp: deckLineClamp(item),
                   WebkitBoxOrient: "vertical",
+                  flexShrink: 1,
+                  wordBreak: "break-word",
                 }}
               >
                 {item.story.deck}
@@ -759,14 +853,18 @@ export default function NewspaperGrid({
           onDragOver={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            setDeleteZoneActive(true);
+            if (draggedStory || draggingCardId) setDeleteZoneActive(true);
           }}
           onDragLeave={() => setDeleteZoneActive(false)}
           onDrop={(e) => {
             e.preventDefault();
             e.stopPropagation();
             setDeleteZoneActive(false);
-            if (draggedStory) {
+            // Handle drag from placed cards (draggingCardId) OR from pool (draggedStory)
+            if (draggingCardId) {
+              setItems((prev) => prev.filter((it) => it.id !== draggingCardId));
+              setDraggingCardId(null);
+            } else if (draggedStory) {
               setItems((prev) =>
                 prev.filter(
                   (it) => it.story.story_id !== draggedStory.story_id,

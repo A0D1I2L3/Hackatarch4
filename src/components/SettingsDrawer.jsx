@@ -81,7 +81,7 @@ export default function SettingsDrawer({ open, onClose }) {
 
   function handleSave() {
     updateSettings({
-      paperName: localName || "THE EDITOR",
+      paperName: localName || "SAMACHAR TIMES",
       paperSlogan: localSlogan || "Truth Without Fear · Est. 1944",
       editorName: localEditor || "Morgan Voss",
     });
@@ -238,7 +238,7 @@ export default function SettingsDrawer({ open, onClose }) {
               style={{ ...inputStyle, marginBottom: 10 }}
               value={localName}
               onChange={(e) => setLocalName(e.target.value)}
-              placeholder="THE EDITOR"
+              placeholder="SAMACHAR TIMES"
               maxLength={40}
               onFocus={(e) => (e.target.style.borderColor = theme.accentGold)}
               onBlur={(e) => (e.target.style.borderColor = theme.cardBorder)}
@@ -297,7 +297,7 @@ export default function SettingsDrawer({ open, onClose }) {
                   letterSpacing: -0.5,
                 }}
               >
-                {localName || "THE EDITOR"}
+                {localName || "SAMACHAR TIMES"}
               </div>
               <div
                 style={{
