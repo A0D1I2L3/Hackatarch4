@@ -68,7 +68,6 @@ export default function App() {
   );
   const placedCount = gridItems.length;
   const allSlotsPlaced = placedCount >= 1;
-  const totalCells = gridItems.reduce((s, it) => s + it.w * it.h, 0);
   const handleDragStart = useCallback((e, story) => {
     setDraggedStory(story);
     e.dataTransfer.effectAllowed = "move";
@@ -459,7 +458,6 @@ export default function App() {
             <span>FIRST EDITION</span>
             <span>
               {placedCount} headline{placedCount !== 1 ? "s" : ""} placed
-              {placedCount > 0 && ` · ${totalCells} cells used`}
             </span>
           </div>
 

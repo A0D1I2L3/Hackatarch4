@@ -1,251 +1,155 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 
 // ─────────────────────────────────────────────────────────────
-//  NEWSPAPER GRID  —  BSP autotiler (zero external deps)
-//
-//  Bugs fixed vs previous version:
-//    1. insertLeaf now computes the ACTUAL depth of the target
-//       leaf before splitting — no more wrong direction / silent
-//       no-ops that swallowed every story after the first.
-//    2. onDrop reads tree & focusId from refs (always current),
-//       eliminating stale-closure misses.
-//    3. "already in grid" guard uses object-reference identity
-//       (l.story === draggedStory) not a fragile string hash.
-//    4. Internal pane drags stamp "ng-pane-id" on dataTransfer
-//       so external-drop handler ignores them correctly.
-//    5. Grid uses 3:4 aspect ratio — more vertical real estate.
-//    6. MAX_HEADLINES bumped to 6.
-//
-//  Controls (unchanged):
-//    • Drag story onto empty grid        → place first pane
-//    • Drag story onto grid (not full)   → splits focused pane
-//    • Drag story onto grid (full)       → replace pane under cursor
-//    • Drag pane onto another pane       → swap stories
-//    • Drag pane to DELETE ZONE          → remove it
-//    • LMB drag on divider bar           → resize split
-//    • RMB drag on pane                  → resize parent split
-//    • × button on pane                  → remove
+//  CONSTANTS
 // ─────────────────────────────────────────────────────────────
+const COLS = 10;
+const ROWS = 10;
+const MAX_HEADLINES = 4;
+const DEFAULT_W = 2;
+const DEFAULT_H = 2;
+const MIN_W = 1;
+const MIN_H = 1;
 
-const MAX_HEADLINES = 6;
-
+// ─────────────────────────────────────────────────────────────
+//  CELL VALUE MATRIX  ← EDIT THIS to change per-cell weights
+//
+//  Shape: 10 rows × 10 cols  (CELL_VALUE_MATRIX[row][col])
+//  Row 0 = top of the grid, Row 9 = bottom.
+//  Values here graduate from 2.5 (top) down to 0.3 (bottom).
+//  The weight of a placed headline = sum of all cell values it covers.
+// ─────────────────────────────────────────────────────────────
 export const CELL_VALUE_MATRIX = [
-  [2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5],
-  [2.2, 2.2, 2.2, 2.2, 2.2, 2.2, 2.2, 2.2, 2.2, 2.2],
-  [1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9],
-  [1.6, 1.6, 1.6, 1.6, 1.6, 1.6, 1.6, 1.6, 1.6, 1.6],
-  [1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.35],
-  [1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1],
-  [0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85],
-  [0.65, 0.65, 0.65, 0.65, 0.65, 0.65, 0.65, 0.65, 0.65, 0.65],
-  [0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45],
-  [0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3],
+  // col: 0    1    2    3    4    5    6    7    8    9
+  [2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5], // row 0
+  [2.2, 2.2, 2.2, 2.2, 2.2, 2.2, 2.2, 2.2, 2.2, 2.2], // row 1
+  [1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9, 1.9], // row 2
+  [1.6, 1.6, 1.6, 1.6, 1.6, 1.6, 1.6, 1.6, 1.6, 1.6], // row 3
+  [1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.35], // row 4
+  [1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1], // row 5
+  [0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85], // row 6
+  [0.65, 0.65, 0.65, 0.65, 0.65, 0.65, 0.65, 0.65, 0.65, 0.65], // row 7
+  [0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45], // row 8
+  [0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3], // row 9
 ];
 
-function computePaneWeight(x, y, w, h, totalW, totalH) {
-  const R = CELL_VALUE_MATRIX.length,
-    C = CELL_VALUE_MATRIX[0].length;
-  const pts = [
-    [x + w * 0.1, y + h * 0.1],
-    [x + w * 0.9, y + h * 0.1],
-    [x + w * 0.1, y + h * 0.9],
-    [x + w * 0.9, y + h * 0.9],
-    [x + w * 0.5, y + h * 0.5],
-  ];
-  let t = 0;
-  for (const [px, py] of pts)
-    t +=
-      CELL_VALUE_MATRIX[Math.min(R - 1, Math.floor((py / totalH) * R))][
-        Math.min(C - 1, Math.floor((px / totalW) * C))
-      ];
-  return Math.round((t / 5) * ((w * h) / (totalW * totalH)) * 1000) / 10;
+/** Sum all cell values that a placed item covers */
+function computeWeight(item) {
+  let total = 0;
+  for (let r = item.row; r < item.row + item.h; r++) {
+    for (let c = item.col; c < item.col + item.w; c++) {
+      const rowVals = CELL_VALUE_MATRIX[r];
+      if (rowVals) total += rowVals[c] ?? 0;
+    }
+  }
+  return Math.round(total * 100) / 100;
 }
 
+// ─────────────────────────────────────────────────────────────
+//  TAG COLOURS
+// ─────────────────────────────────────────────────────────────
 const TAG_COLORS = {
-  Investigative: "#8b1a1a",
-  Politics: "#1a3a8b",
-  Crime: "#5a1a1a",
-  Culture: "#4a1a6a",
-  Health: "#1a5a2a",
-  Business: "#3a3a1a",
-  Environment: "#1a5a4a",
-  Technology: "#1a2a7a",
-  Staff: "#7a3a1a",
-  default: "#5a5040",
+  Investigative: { bg: "transparent", color: "#8b1a1a" },
+  Politics: { bg: "transparent", color: "#1a3a8b" },
+  Crime: { bg: "transparent", color: "#5a1a1a" },
+  Culture: { bg: "transparent", color: "#4a1a6a" },
+  Health: { bg: "transparent", color: "#1a5a2a" },
+  Business: { bg: "transparent", color: "#3a3a1a" },
+  Environment: { bg: "transparent", color: "#1a5a4a" },
+  Technology: { bg: "transparent", color: "#1a2a7a" },
+  Staff: { bg: "transparent", color: "#7a3a1a" },
+  default: { bg: "transparent", color: "#5a5040" },
 };
 
+// ─────────────────────────────────────────────────────────────
+//  COLLISION HELPERS
+// ─────────────────────────────────────────────────────────────
+function occupiedCells(items, excludeId = null) {
+  const cells = new Set();
+  items.forEach((item) => {
+    if (item.id === excludeId) return;
+    for (let c = item.col; c < item.col + item.w; c++)
+      for (let r = item.row; r < item.row + item.h; r++) cells.add(`${c},${r}`);
+  });
+  return cells;
+}
+
+function canPlace(items, col, row, w, h, excludeId = null) {
+  if (col < 0 || row < 0 || col + w > COLS || row + h > ROWS) return false;
+  const taken = occupiedCells(items, excludeId);
+  for (let c = col; c < col + w; c++)
+    for (let r = row; r < row + h; r++)
+      if (taken.has(`${c},${r}`)) return false;
+  return true;
+}
+
+function findFreeOrigin(items) {
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (canPlace(items, c, r, DEFAULT_W, DEFAULT_H))
+        return { col: c, row: r };
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────
+//  RESIZE EDGE DETECTION  (pointer-based, no handle divs)
+//
+//  Returns the resize "edge" string (n/s/e/w/ne/nw/se/sw)
+//  when the pointer is within EDGE_PX pixels of that edge,
+//  or null if it's in the interior.
+// ─────────────────────────────────────────────────────────────
+const EDGE_PX = 10; // px from border that counts as "on edge"
+
+function detectEdge(e, el) {
+  const rect = el.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const w = rect.width;
+  const h = rect.height;
+
+  const onN = y <= EDGE_PX;
+  const onS = y >= h - EDGE_PX;
+  const onW = x <= EDGE_PX;
+  const onE = x >= w - EDGE_PX;
+
+  if (onN && onW) return "nw";
+  if (onN && onE) return "ne";
+  if (onS && onW) return "sw";
+  if (onS && onE) return "se";
+  if (onN) return "n";
+  if (onS) return "s";
+  if (onW) return "w";
+  if (onE) return "e";
+  return null;
+}
+
+const EDGE_CURSORS = {
+  n: "n-resize",
+  s: "s-resize",
+  e: "e-resize",
+  w: "w-resize",
+  ne: "ne-resize",
+  nw: "nw-resize",
+  se: "se-resize",
+  sw: "sw-resize",
+};
+
+// ─────────────────────────────────────────────────────────────
+//  COMPONENT
+// ─────────────────────────────────────────────────────────────
+// Default theme fallback so component still works standalone
 const DEFAULT_THEME = {
   cardBg: "#fff",
   cardBorder: "#c8a96e88",
+  barBg: "#f5f0e8",
   textColor: "#0f172a",
   subColor: "#475569",
   accentGold: "#c8a96e",
-  bgColor: "#f5f1e8",
   font: "'Georgia', serif",
   mono: "'Courier New', monospace",
   darkMode: false,
 };
 
-const ANIM_CSS = `
-@keyframes ngIn    { from{opacity:0;transform:scale(.92)} to{opacity:1;transform:scale(1)} }
-@keyframes ngSwap  { 0%{opacity:1;transform:scale(1)} 40%{opacity:0;transform:scale(.86)}
-                     60%{opacity:0;transform:scale(.86)} 100%{opacity:1;transform:scale(1)} }
-@keyframes ngGhost { 0%,100%{opacity:.45} 50%{opacity:.9} }
-@keyframes ngGlow  { 0%,100%{opacity:.3}  50%{opacity:.9} }
-@keyframes ngDeletePulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.04)} }
-`;
-
-// ─────────────────────────────────────────────────────────────
-//  BSP HELPERS
-// ─────────────────────────────────────────────────────────────
-function getLeaves(node) {
-  if (!node) return [];
-  if (node.type === "leaf") return [node];
-  return [...getLeaves(node.left), ...getLeaves(node.right)];
-}
-
-// FIX 1: Compute the actual depth of a specific leaf in the tree.
-// This is used to choose the correct split direction (v / h).
-function getLeafDepth(root, targetId, depth = 0) {
-  if (!root) return -1;
-  if (root.type === "leaf") return root.id === targetId ? depth : -1;
-  const l = getLeafDepth(root.left, targetId, depth + 1);
-  if (l !== -1) return l;
-  return getLeafDepth(root.right, targetId, depth + 1);
-}
-
-// Split the leaf whose id === targetId, inserting newLeaf beside it.
-// Direction alternates based on the leaf's ACTUAL depth in the tree.
-function insertLeaf(root, targetId, newLeaf) {
-  const depth = root ? getLeafDepth(root, targetId) : 0;
-  return _insert(root, targetId, newLeaf, depth);
-}
-
-function _insert(node, targetId, newLeaf, splitDepth) {
-  if (!node) return newLeaf;
-  if (node.type === "leaf") {
-    if (node.id !== targetId) return node; // wrong leaf, leave alone
-    const dir = splitDepth % 2 === 0 ? "v" : "h"; // even depth → vertical
-    return { type: "split", dir, ratio: 0.5, left: node, right: newLeaf };
-  }
-  // Route into exactly one subtree — never recurse both sides
-  const inLeft = getLeaves(node.left).some((l) => l.id === targetId);
-  if (inLeft)
-    return { ...node, left: _insert(node.left, targetId, newLeaf, splitDepth) };
-  const inRight = getLeaves(node.right).some((l) => l.id === targetId);
-  if (inRight)
-    return {
-      ...node,
-      right: _insert(node.right, targetId, newLeaf, splitDepth),
-    };
-  return node; // targetId not in this subtree
-}
-
-function removeLeaf(root, id) {
-  if (!root) return null;
-  if (root.type === "leaf") return root.id === id ? null : root;
-  const l = removeLeaf(root.left, id);
-  const r = removeLeaf(root.right, id);
-  if (!l) return r;
-  if (!r) return l;
-  return { ...root, left: l, right: r };
-}
-
-function replaceLeafStory(root, id, story) {
-  if (!root) return null;
-  if (root.type === "leaf") return root.id === id ? { ...root, story } : root;
-  return {
-    ...root,
-    left: replaceLeafStory(root.left, id, story),
-    right: replaceLeafStory(root.right, id, story),
-  };
-}
-
-function swapLeafStories(root, idA, idB) {
-  const leaves = getLeaves(root);
-  const sA = leaves.find((l) => l.id === idA)?.story;
-  const sB = leaves.find((l) => l.id === idB)?.story;
-  if (!sA || !sB) return root;
-  return replaceLeafStory(replaceLeafStory(root, idA, sB), idB, sA);
-}
-
-function updateNodeRatio(root, target, ratio) {
-  if (!root) return root;
-  if (root === target) return { ...root, ratio };
-  if (root.type === "leaf") return root;
-  return {
-    ...root,
-    left: updateNodeRatio(root.left, target, ratio),
-    right: updateNodeRatio(root.right, target, ratio),
-  };
-}
-
-// ─────────────────────────────────────────────────────────────
-//  LAYOUT
-// ─────────────────────────────────────────────────────────────
-function layoutTree(node, x, y, w, h) {
-  if (!node) return [];
-  if (node.type === "leaf")
-    return [{ id: node.id, story: node.story, x, y, w, h }];
-  const r = node.ratio ?? 0.5;
-  if (node.dir === "v") {
-    const lw = w * r;
-    return [
-      ...layoutTree(node.left, x, y, lw, h),
-      ...layoutTree(node.right, x + lw, y, w - lw, h),
-    ];
-  }
-  const lh = h * r;
-  return [
-    ...layoutTree(node.left, x, y, w, lh),
-    ...layoutTree(node.right, x, y + lh, w, h - lh),
-  ];
-}
-
-function collectSplits(node, x, y, w, h) {
-  if (!node || node.type === "leaf") return [];
-  const r = node.ratio ?? 0.5;
-  if (node.dir === "v") {
-    const lw = w * r;
-    return [
-      { node, x: x + lw, y, w, h, dir: "v" },
-      ...collectSplits(node.left, x, y, lw, h),
-      ...collectSplits(node.right, x + lw, y, w - lw, h),
-    ];
-  }
-  const lh = h * r;
-  return [
-    { node, x, y: y + lh, w, h, dir: "h" },
-    ...collectSplits(node.left, x, y, w, lh),
-    ...collectSplits(node.right, x, y + lh, w, h - lh),
-  ];
-}
-
-// ─────────────────────────────────────────────────────────────
-//  FONT SCALING
-// ─────────────────────────────────────────────────────────────
-const headlineSize = (w, h) =>
-  Math.round(Math.max(9, Math.min(38, Math.sqrt(w * h * 0.7) * 0.12)));
-const deckSize = (w, h) =>
-  Math.round(Math.max(8, Math.min(15, Math.sqrt(w * h * 0.7) * 0.055)));
-const tagSize = (s) => Math.round(Math.max(7, Math.min(11, s * 0.55)));
-
-function findParentSplit(root, leafId) {
-  if (!root || root.type === "leaf") return null;
-  const inLeft = getLeaves(root.left).some((l) => l.id === leafId);
-  const inRight = getLeaves(root.right).some((l) => l.id === leafId);
-  if (inLeft || inRight) return root;
-  return (
-    findParentSplit(root.left, leafId) || findParentSplit(root.right, leafId)
-  );
-}
-
-let _seq = 0;
-const newLeafId = () => `pane_${++_seq}_${Date.now()}`;
-
-// ─────────────────────────────────────────────────────────────
-//  COMPONENT
-// ─────────────────────────────────────────────────────────────
 export default function NewspaperGrid({
   draggedStory,
   onGridChange,
@@ -253,859 +157,657 @@ export default function NewspaperGrid({
   theme: themeProp,
 }) {
   const theme = themeProp || DEFAULT_THEME;
+  const [items, setItems] = useState([]);
+  const [hoverCell, setHoverCell] = useState(null);
+  const [resizing, setResizing] = useState(null);
+  // ghostRect: {col,row,w,h,valid} — shown while resizing
+  const [ghostRect, setGhostRect] = useState(null);
+  // hoverEdge: { id, edge } — tracks which edge cursor is near
+  const [hoverEdge, setHoverEdge] = useState(null);
 
-  const [tree, setTree] = useState(null);
-  const [focusId, setFocusId] = useState(null);
+  const gridRef = useRef(null);
 
-  // FIX 2: Refs that are always current — used inside drag callbacks
-  // to avoid stale closures from React's synthetic event batching.
-  const treeRef = useRef(null);
-  const focusRef = useRef(null);
-  // FIX 6: Keep draggedStory prop in a ref so onDrop always sees the
-  // current value even if the callback closure hasn't been recreated yet.
-  const draggedStoryRef = useRef(draggedStory);
   useEffect(() => {
-    draggedStoryRef.current = draggedStory;
-  }, [draggedStory]);
+    onGridChange?.(items);
+  }, [items, onGridChange]);
 
-  // Wrapper: keeps ref in sync whenever tree changes
-  const updateTree = useCallback((updaterOrValue) => {
-    setTree((prev) => {
-      const next =
-        typeof updaterOrValue === "function"
-          ? updaterOrValue(prev)
-          : updaterOrValue;
-      treeRef.current = next;
-      return next;
-    });
+  // ── Cell dimensions ───────────────────────────────────────
+  const cellSize = useCallback(() => {
+    if (!gridRef.current) return { cw: 0, ch: 0 };
+    const { width, height } = gridRef.current.getBoundingClientRect();
+    return { cw: width / COLS, ch: height / ROWS };
   }, []);
 
-  const updateFocus = useCallback((id) => {
-    focusRef.current = id;
-    setFocusId(id);
-  }, []);
-
-  // External drag counters / state
-  const [extOver, setExtOver] = useState(false);
-  const [extGhostId, setExtGhostId] = useState(null);
-  const dragCounter = useRef(0);
-
-  // Internal pane drag
-  const [intDragId, setIntDragId] = useState(null);
-  const [intGhostId, setIntGhostId] = useState(null);
-  const intDragRef = useRef(null); // FIX 2 (same pattern)
-
-  // Delete zone
-  const [deleteHover, setDeleteHover] = useState(false);
-  const [anyDragging, setAnyDragging] = useState(false);
-
-  // Animations
-  const [animIn, setAnimIn] = useState(() => new Set());
-  const [animSwap, setAnimSwap] = useState(() => new Set());
-
-  const containerRef = useRef(null);
-  const divDragRef = useRef(null);
-  const scaleDragRef = useRef(null);
-  const [dim, setDim] = useState({ W: 600, H: 800 });
-
-  // Measure container
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([e]) => {
-      const { width, height } = e.contentRect;
-      if (width > 0) setDim({ W: width, H: height });
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  // Inject CSS once
-  useEffect(() => {
-    if (document.getElementById("ng-css")) return;
-    const s = document.createElement("style");
-    s.id = "ng-css";
-    s.textContent = ANIM_CSS;
-    document.head.appendChild(s);
-  }, []);
-
-  const { W, H } = dim;
-
-  // Publish grid state upward
-  useEffect(() => {
-    if (!onGridChange) return;
-    const panes = layoutTree(treeRef.current, 0, 0, W, H);
-    onGridChange(
-      panes.map((p) => ({
-        id: p.id,
-        story: p.story,
-        col: Math.round((p.x / W) * 10),
-        row: Math.round((p.y / H) * 10),
-        w: Math.max(1, Math.round((p.w / W) * 10)),
-        h: Math.max(1, Math.round((p.h / H) * 10)),
-        weight: computePaneWeight(p.x, p.y, p.w, p.h, W, H),
-      })),
-    );
-  }, [tree, W, H, onGridChange]);
-
-  const fireAnim = (setter, id, ms) => {
-    setter((p) => new Set([...p, id]));
-    setTimeout(
-      () =>
-        setter((p) => {
-          const s = new Set(p);
-          s.delete(id);
-          return s;
-        }),
-      ms,
-    );
-  };
-
-  const relPos = (e) => {
-    const r = containerRef.current?.getBoundingClientRect();
-    return r
-      ? { px: e.clientX - r.left, py: e.clientY - r.top }
-      : { px: 0, py: 0 };
-  };
-
-  const hitPane = (panes, px, py) =>
-    panes.find(
-      (p) => px >= p.x && px < p.x + p.w && py >= p.y && py < p.y + p.h,
-    ) ?? null;
-
-  // ─────────────────────────────────────────────────────────
-  //  EXTERNAL DROP
-  // ─────────────────────────────────────────────────────────
-  const onDragEnter = useCallback((e) => {
-    e.preventDefault();
-    dragCounter.current++;
-    setExtOver(true);
-  }, []);
-
-  const onDragOver = useCallback(
-    (e) => {
-      e.preventDefault();
-      const currentTree = treeRef.current;
-      const leaves = getLeaves(currentTree);
-      if (leaves.length >= MAX_HEADLINES) {
-        const panes = layoutTree(currentTree, 0, 0, W, H);
-        const { px, py } = relPos(e);
-        setExtGhostId(hitPane(panes, px, py)?.id ?? null);
-      } else {
-        setExtGhostId(null);
-      }
+  const pxToCell = useCallback(
+    (clientX, clientY) => {
+      if (!gridRef.current) return null;
+      const rect = gridRef.current.getBoundingClientRect();
+      const { cw, ch } = cellSize();
+      const col = Math.floor((clientX - rect.left) / cw);
+      const row = Math.floor((clientY - rect.top) / ch);
+      if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return null;
+      return { col, row };
     },
-    [W, H],
+    [cellSize],
   );
 
-  const onDragLeave = useCallback((e) => {
-    dragCounter.current--;
-    if (dragCounter.current <= 0) {
-      dragCounter.current = 0;
-      setExtOver(false);
-      setExtGhostId(null);
-    }
-  }, []);
-
-  const onDrop = useCallback(
+  // ── Drop from pool ────────────────────────────────────────
+  const handleGridDragOver = useCallback(
     (e) => {
       e.preventDefault();
-      dragCounter.current = 0;
-      setExtOver(false);
-      setExtGhostId(null);
+      setHoverCell(pxToCell(e.clientX, e.clientY));
+    },
+    [pxToCell],
+  );
 
-      // FIX 4: Internal pane drags mark themselves — bail so we don't
-      // treat a pane-swap as an external story drop.
-      if (e.dataTransfer.getData("ng-pane-id")) return;
+  const handleGridDragLeave = useCallback(() => setHoverCell(null), []);
 
-      // FIX 6: Read draggedStory from the always-current ref.
-      const draggedStory = draggedStoryRef.current;
+  const handleGridDrop = useCallback(
+    (e) => {
+      e.preventDefault();
+      setHoverCell(null);
       if (!draggedStory) return;
-
-      // FIX 2: Read always-current values from refs, not stale closure state.
-      const currentTree = treeRef.current;
-      const currentFocus = focusRef.current;
-
-      const leaves = getLeaves(currentTree);
-      const panes = layoutTree(currentTree, 0, 0, W, H);
-      const { px, py } = relPos(e);
-      const hit = hitPane(panes, px, py);
-
-      // ── Case 1: grid empty ──────────────────────────────────
-      if (!currentTree) {
-        const id = newLeafId();
-        const leaf = { type: "leaf", id, story: draggedStory };
-        updateTree(leaf);
-        updateFocus(id);
-        fireAnim(setAnimIn, id, 360);
+      if (items.length >= MAX_HEADLINES) return;
+      if (items.some((it) => it.story.story_id === draggedStory.story_id))
         return;
+
+      const cell = pxToCell(e.clientX, e.clientY);
+      if (!cell) return;
+
+      let { col, row } = cell;
+      if (!canPlace(items, col, row, DEFAULT_W, DEFAULT_H)) {
+        const free = findFreeOrigin(items);
+        if (!free) return;
+        col = free.col;
+        row = free.row;
       }
 
-      // ── Case 2: grid full → replace pane under cursor ───────
-      if (leaves.length >= MAX_HEADLINES) {
-        const target =
-          hit ?? panes.find((p) => p.id === currentFocus) ?? panes[0];
-        fireAnim(setAnimSwap, target.id, 430);
-        updateTree((prev) => replaceLeafStory(prev, target.id, draggedStory));
-        updateFocus(target.id);
-        return;
-      }
-
-      // ── Case 3: same story object already placed → update ───
-      // FIX 3: reference identity, not fragile string hash
-      const existing = leaves.find((l) => l.story === draggedStory);
-      if (existing) {
-        fireAnim(setAnimSwap, existing.id, 430);
-        updateTree((prev) => replaceLeafStory(prev, existing.id, draggedStory));
-        return;
-      }
-
-      // ── Case 4: room available → split focused pane and add ─
-      const splitId = currentFocus ?? leaves[leaves.length - 1].id;
-      const id = newLeafId();
-      const leaf = { type: "leaf", id, story: draggedStory };
-      updateTree((prev) => insertLeaf(prev, splitId, leaf));
-      updateFocus(id);
-      fireAnim(setAnimIn, id, 360);
+      setItems((prev) => [
+        ...prev,
+        {
+          id: draggedStory.story_id,
+          story: draggedStory,
+          col,
+          row,
+          w: DEFAULT_W,
+          h: DEFAULT_H,
+        },
+      ]);
     },
-    [W, H, updateTree, updateFocus],
+    [draggedStory, items, pxToCell],
   );
 
-  // ─────────────────────────────────────────────────────────
-  //  REMOVE
-  // ─────────────────────────────────────────────────────────
-  const doRemove = useCallback(
-    (id) => {
-      updateTree((prev) => {
-        const next = removeLeaf(prev, id);
-        const remaining = getLeaves(next);
-        const nf =
-          focusRef.current !== id
-            ? focusRef.current
-            : (remaining[0]?.id ?? null);
-        focusRef.current = nf;
-        setFocusId(nf);
-        return next;
+  // ── Remove ────────────────────────────────────────────────
+  const handleRemove = useCallback((id) => {
+    setItems((prev) => prev.filter((it) => it.id !== id));
+  }, []);
+
+  // ── Pointer-based resize ──────────────────────────────────
+  //
+  //  onPointerMove over an item card:
+  //    → detect which edge the pointer is near
+  //    → set cursor accordingly
+  //
+  //  onPointerDown on an item card:
+  //    → if edge detected, start resizing (capture pointer)
+  //
+  //  Global pointermove / pointerup while resizing:
+  //    → compute new col/row/w/h from delta
+  //    → update ghostRect (preview)
+  //    → on pointerup, commit if valid else snap back
+
+  const handleCardPointerMove = useCallback(
+    (e, id) => {
+      if (resizing) return; // already resizing — handled globally
+      const edge = detectEdge(e, e.currentTarget);
+      if (edge) {
+        e.currentTarget.style.cursor = EDGE_CURSORS[edge];
+        setHoverEdge({ id, edge });
+      } else {
+        e.currentTarget.style.cursor = "default";
+        setHoverEdge(null);
+      }
+    },
+    [resizing],
+  );
+
+  const handleCardPointerLeave = useCallback(
+    (e) => {
+      if (resizing) return;
+      e.currentTarget.style.cursor = "default";
+      setHoverEdge(null);
+    },
+    [resizing],
+  );
+
+  const handleCardPointerDown = useCallback(
+    (e, id) => {
+      const edge = detectEdge(e, e.currentTarget);
+      if (!edge) return; // interior — don't hijack (allow remove button etc.)
+      e.preventDefault();
+      e.stopPropagation();
+      e.currentTarget.setPointerCapture(e.pointerId);
+
+      const item = items.find((it) => it.id === id);
+      if (!item) return;
+
+      setResizing({
+        id,
+        edge,
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        origW: item.w,
+        origH: item.h,
+        origCol: item.col,
+        origRow: item.row,
+      });
+      setGhostRect({
+        col: item.col,
+        row: item.row,
+        w: item.w,
+        h: item.h,
+        valid: true,
       });
     },
-    [updateTree],
+    [items],
   );
 
-  // ─────────────────────────────────────────────────────────
-  //  DIVIDER DRAG
-  // ─────────────────────────────────────────────────────────
-  const onDividerDown = useCallback((e, s) => {
-    e.preventDefault();
-    e.stopPropagation();
-    divDragRef.current = {
-      s,
-      sx: e.clientX,
-      sy: e.clientY,
-      r0: s.node.ratio ?? 0.5,
+  // Global pointer events during resize
+  useEffect(() => {
+    if (!resizing) return;
+
+    const onMove = (e) => {
+      const { cw, ch } = cellSize();
+      if (!cw || !ch) return;
+
+      const dx = Math.round((e.clientX - resizing.startX) / cw);
+      const dy = Math.round((e.clientY - resizing.startY) / ch);
+
+      let col = resizing.origCol,
+        row = resizing.origRow;
+      let w = resizing.origW,
+        h = resizing.origH;
+
+      const edge = resizing.edge;
+      if (edge === "se") {
+        w = Math.max(MIN_W, resizing.origW + dx);
+        h = Math.max(MIN_H, resizing.origH + dy);
+      }
+      if (edge === "sw") {
+        const dw = Math.min(resizing.origW - MIN_W, -dx);
+        col += dw;
+        w = resizing.origW - dw;
+        h = Math.max(MIN_H, resizing.origH + dy);
+      }
+      if (edge === "ne") {
+        const dh = Math.min(resizing.origH - MIN_H, -dy);
+        row += dh;
+        h = resizing.origH - dh;
+        w = Math.max(MIN_W, resizing.origW + dx);
+      }
+      if (edge === "nw") {
+        const dw = Math.min(resizing.origW - MIN_W, -dx);
+        const dh = Math.min(resizing.origH - MIN_H, -dy);
+        col += dw;
+        row += dh;
+        w = resizing.origW - dw;
+        h = resizing.origH - dh;
+      }
+      if (edge === "e") {
+        w = Math.max(MIN_W, resizing.origW + dx);
+      }
+      if (edge === "w") {
+        const dw = Math.min(resizing.origW - MIN_W, -dx);
+        col += dw;
+        w = resizing.origW - dw;
+      }
+      if (edge === "s") {
+        h = Math.max(MIN_H, resizing.origH + dy);
+      }
+      if (edge === "n") {
+        const dh = Math.min(resizing.origH - MIN_H, -dy);
+        row += dh;
+        h = resizing.origH - dh;
+      }
+
+      col = Math.max(0, col);
+      row = Math.max(0, row);
+      w = Math.min(w, COLS - col);
+      h = Math.min(h, ROWS - row);
+
+      const others = items.filter((it) => it.id !== resizing.id);
+      const valid = canPlace(others, col, row, w, h);
+      setGhostRect({ col, row, w, h, valid });
     };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  }, []);
 
-  const onDividerMove = useCallback(
-    (e) => {
-      const d = divDragRef.current;
-      if (!d) return;
-      const { s, sx, sy, r0 } = d;
-      const nr =
-        s.node.dir === "v"
-          ? Math.max(0.06, Math.min(0.94, r0 + (e.clientX - sx) / s.w))
-          : Math.max(0.06, Math.min(0.94, r0 + (e.clientY - sy) / s.h));
-      updateTree((prev) => updateNodeRatio(prev, s.node, nr));
-    },
-    [updateTree],
-  );
-
-  const onDividerUp = useCallback(() => {
-    divDragRef.current = null;
-  }, []);
-
-  // ─────────────────────────────────────────────────────────
-  //  SCALE DRAG (RMB → resize parent split)
-  // ─────────────────────────────────────────────────────────
-  const onPaneRMB = useCallback(
-    (e, id) => {
-      if (e.button !== 2 || published) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const parent = findParentSplit(treeRef.current, id);
-      if (!parent) return;
-      const isLeft = getLeaves(parent.left).some((l) => l.id === id);
-      scaleDragRef.current = {
-        parent,
-        isLeft,
-        sx: e.clientX,
-        sy: e.clientY,
-        r0: parent.ratio ?? 0.5,
-        dir: parent.dir,
-      };
-      const move = (ev) => {
-        const d = scaleDragRef.current;
-        if (!d) return;
-        const delta =
-          d.dir === "v" ? (ev.clientX - d.sx) / W : (ev.clientY - d.sy) / H;
-        const nr = Math.max(
-          0.06,
-          Math.min(0.94, d.r0 + (d.isLeft ? 1 : -1) * delta),
-        );
-        updateTree((prev) => updateNodeRatio(prev, d.parent, nr));
-      };
-      const up = () => {
-        scaleDragRef.current = null;
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", up);
-      };
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", up);
-    },
-    [published, W, H, updateTree],
-  );
-
-  // ─────────────────────────────────────────────────────────
-  //  INTERNAL PANE DRAG (swap)
-  // ─────────────────────────────────────────────────────────
-  const onPaneDragStart = useCallback(
-    (e, id) => {
-      if (published) {
-        e.preventDefault();
-        return;
+    const onUp = () => {
+      if (ghostRect) {
+        const { col, row, w, h, valid } = ghostRect;
+        if (valid) {
+          setItems((prev) =>
+            prev.map((it) =>
+              it.id === resizing.id ? { ...it, col, row, w, h } : it,
+            ),
+          );
+        }
+        // else snap back — no update needed (items unchanged)
       }
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("ng-pane-id", id); // FIX 4: mark as internal
-      intDragRef.current = id;
-      setIntDragId(id);
-      setAnyDragging(true);
-    },
-    [published],
-  );
+      setResizing(null);
+      setGhostRect(null);
+    };
 
-  const onPaneDragOver = useCallback((e, targetId) => {
-    if (!intDragRef.current || intDragRef.current === targetId) return;
-    e.preventDefault();
-    e.stopPropagation();
-    setIntGhostId(targetId);
-  }, []);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [resizing, ghostRect, cellSize, items]);
 
-  const onPaneDrop = useCallback(
-    (e, targetId) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const srcId = intDragRef.current;
-      if (!srcId || srcId === targetId) {
-        intDragRef.current = null;
-        setIntDragId(null);
-        setIntGhostId(null);
-        setAnyDragging(false);
-        return;
-      }
-      fireAnim(setAnimSwap, srcId, 430);
-      fireAnim(setAnimSwap, targetId, 430);
-      updateTree((prev) => swapLeafStories(prev, srcId, targetId));
-      intDragRef.current = null;
-      setIntDragId(null);
-      setIntGhostId(null);
-      setAnyDragging(false);
-    },
-    [updateTree],
-  );
+  // ── Drop ghost preview ────────────────────────────────────
+  const dropPreview =
+    hoverCell && draggedStory && items.length < MAX_HEADLINES
+      ? canPlace(items, hoverCell.col, hoverCell.row, DEFAULT_W, DEFAULT_H)
+        ? {
+            col: hoverCell.col,
+            row: hoverCell.row,
+            w: DEFAULT_W,
+            h: DEFAULT_H,
+            valid: true,
+          }
+        : (() => {
+            const f = findFreeOrigin(items);
+            return f ? { ...f, w: DEFAULT_W, h: DEFAULT_H, valid: true } : null;
+          })()
+      : null;
 
-  const onPaneDragEnd = useCallback(() => {
-    intDragRef.current = null;
-    setIntDragId(null);
-    setIntGhostId(null);
-    setAnyDragging(false);
-  }, []);
+  // ── Helper: absolute position from grid coords ────────────
+  function absStyle(col, row, w, h, inset = 2) {
+    return {
+      position: "absolute",
+      left: `calc(${col} * (100% / ${COLS}) + ${inset}px)`,
+      top: `calc(${row} * (100% / ${ROWS}) + ${inset}px)`,
+      width: `calc(${w}   * (100% / ${COLS}) - ${inset * 2}px)`,
+      height: `calc(${h}   * (100% / ${ROWS}) - ${inset * 2}px)`,
+    };
+  }
 
-  const onDeleteDragOver = useCallback((e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setDeleteHover(true);
-  }, []);
-  const onDeleteDragLeave = useCallback(() => setDeleteHover(false), []);
-  const onDeleteDrop = useCallback(
-    (e) => {
-      e.preventDefault();
-      setDeleteHover(false);
-      const id = e.dataTransfer.getData("ng-pane-id") || intDragRef.current;
-      if (id) doRemove(id);
-      intDragRef.current = null;
-      setIntDragId(null);
-      setIntGhostId(null);
-      setAnyDragging(false);
-    },
-    [doRemove],
-  );
-
-  // ─────────────────────────────────────────────────────────
-  //  RENDER
-  // ─────────────────────────────────────────────────────────
-  const panes = layoutTree(tree, 0, 0, W, H);
-  const splits = published ? [] : collectSplits(tree, 0, 0, W, H);
-  const totalLeaves = getLeaves(tree).length;
-
+  // ── Render ────────────────────────────────────────────────
   return (
     <div
+      ref={gridRef}
+      onDragOver={handleGridDragOver}
+      onDragLeave={handleGridDragLeave}
+      onDrop={handleGridDrop}
       style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 6,
+        position: "relative",
         width: "100%",
+        aspectRatio: "1 / 1",
+        display: "grid",
+        gridTemplateColumns: `repeat(${COLS}, 1fr)`,
+        gridTemplateRows: `repeat(${ROWS}, 1fr)`,
+        gap: 1,
+        background: theme.darkMode ? "#2a241833" : "#c8a96e33",
+        border: `1.5px solid ${theme.accentGold}`,
+        borderRadius: 6,
+        overflow: "hidden",
+        userSelect: resizing ? "none" : "auto",
+        cursor: resizing
+          ? (EDGE_CURSORS[resizing.edge] ?? "default")
+          : "default",
       }}
     >
-      {/* ══ GRID ══════════════════════════════════════════════ */}
-      <div
-        ref={containerRef}
-        onDragEnter={onDragEnter}
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
-        onContextMenu={(e) => e.preventDefault()}
-        style={{
-          position: "relative",
-          width: "100%",
-          aspectRatio: "3/4", // taller = more real estate
-          background: theme.darkMode ? "#1a160f" : "#c8a96e11",
-          border: `1.5px solid ${extOver ? "#2d6a4f" : theme.accentGold}`,
-          borderRadius: 6,
-          overflow: "hidden",
-          transition: "border-color 0.2s",
-          userSelect: "none",
-        }}
-      >
-        {/* Pane cards */}
-        {panes.map(({ id, story, x, y, w, h }) => {
-          const isFocused = focusId === id;
-          const isExtGhost = extGhostId === id;
-          const isIntGhost = intGhostId === id;
-          const isGhost = isExtGhost || isIntGhost;
-          const isDragging = intDragId === id;
-          const hSize = headlineSize(w, h);
-          const dSize = deckSize(w, h);
-          const tSize = tagSize(hSize);
-          const weight = computePaneWeight(x, y, w, h, W, H);
-          const frac = (w * h) / (W * H);
-          const showDeck = frac > 0.08 && story?.deck;
-          const showTag = hSize >= 9 && story?.tag;
-          const pad = Math.max(6, Math.round(hSize * 0.5));
-          const tagClr = TAG_COLORS[story?.tag] || TAG_COLORS.default;
-          const maxL = Math.max(2, Math.floor(h / (hSize * 1.38)));
-
-          let anim = {};
-          if (animIn.has(id))
-            anim = { animation: "ngIn .34s cubic-bezier(.22,1,.36,1) both" };
-          else if (animSwap.has(id))
-            anim = { animation: "ngSwap .42s cubic-bezier(.22,1,.36,1) both" };
-
+      {/* Grid cell backgrounds — show value as faint tint */}
+      {Array.from({ length: ROWS }).map((_, r) =>
+        Array.from({ length: COLS }).map((_, c) => {
+          const val = CELL_VALUE_MATRIX[r]?.[c] ?? 1;
+          // Map 0.3–2.5 → opacity 0.04–0.18 for a subtle value heatmap
+          const opacity = 0.04 + ((val - 0.3) / (2.5 - 0.3)) * 0.14;
           return (
             <div
-              key={id}
-              draggable={!published}
-              onDragStart={(e) => onPaneDragStart(e, id)}
-              onDragOver={(e) => onPaneDragOver(e, id)}
-              onDrop={(e) => onPaneDrop(e, id)}
-              onDragEnd={onPaneDragEnd}
-              onClick={() => !isDragging && updateFocus(id)}
-              onMouseDown={(e) => onPaneRMB(e, id)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
+              key={`${c}-${r}`}
+              title={`cell (${c},${r}) value: ${val}`}
               style={{
-                position: "absolute",
-                left: `${(x / W) * 100}%`,
-                top: `${(y / H) * 100}%`,
-                width: `${(w / W) * 100}%`,
-                height: `${(h / H) * 100}%`,
-                boxSizing: "border-box",
-                padding: pad,
-                paddingBottom: pad + 16,
-                background: isGhost
-                  ? "transparent"
-                  : isDragging
-                    ? `${theme.cardBg}88`
-                    : theme.cardBg,
-                border: isGhost
-                  ? `2px dashed ${theme.accentGold}`
-                  : isFocused
-                    ? `2px solid ${theme.accentGold}`
-                    : `1px solid ${theme.cardBorder}`,
-                borderRadius: 2,
-                overflow: "hidden",
-                cursor: published
-                  ? "default"
-                  : isDragging
-                    ? "grabbing"
-                    : "grab",
-                display: "flex",
-                flexDirection: "column",
-                gap: Math.max(2, Math.round(hSize * 0.2)),
-                zIndex: 2,
-                opacity: isDragging ? 0.35 : 1,
-                transition: "border-color .15s, opacity .18s, background .18s",
-                ...anim,
-              }}
-            >
-              {/* Ghost overlay */}
-              {isGhost && (
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    background: `${theme.accentGold}18`,
-                    animation: "ngGhost 1s ease-in-out infinite",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    pointerEvents: "none",
-                    zIndex: 50,
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: 9,
-                      color: theme.accentGold,
-                      fontFamily: theme.mono,
-                      letterSpacing: ".1em",
-                      background: `${theme.cardBg}f2`,
-                      padding: "3px 9px",
-                      borderRadius: 3,
-                      border: `1px dashed ${theme.accentGold}`,
-                    }}
-                  >
-                    {isIntGhost ? "↔ SWAP" : "⬇ REPLACE"}
-                  </span>
-                </div>
-              )}
-
-              {/* Remove × */}
-              {!published && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    doRemove(id);
-                  }}
-                  style={{
-                    position: "absolute",
-                    top: 3,
-                    right: 3,
-                    background: theme.cardBorder,
-                    border: "none",
-                    borderRadius: "50%",
-                    width: 16,
-                    height: 16,
-                    cursor: "pointer",
-                    fontSize: 10,
-                    color: theme.textColor,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    zIndex: 10,
-                    padding: 0,
-                    transition: "background .12s, transform .1s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "#e74c3c";
-                    e.currentTarget.style.color = "#fff";
-                    e.currentTarget.style.transform = "scale(1.3)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = theme.cardBorder;
-                    e.currentTarget.style.color = theme.textColor;
-                    e.currentTarget.style.transform = "scale(1)";
-                  }}
-                >
-                  ×
-                </button>
-              )}
-
-              {/* Weight */}
-              <div
-                style={{
-                  position: "absolute",
-                  bottom: 3,
-                  right: 3,
-                  background: theme.textColor,
-                  color: theme.bgColor ?? "#f5f1e8",
-                  fontSize: 7,
-                  fontWeight: 700,
-                  padding: "1px 4px",
-                  borderRadius: 2,
-                  letterSpacing: ".04em",
-                  zIndex: 10,
-                }}
-              >
-                ◼ {weight}
-              </div>
-
-              {/* Focus dot */}
-              {isFocused && !published && (
-                <div
-                  style={{
-                    position: "absolute",
-                    bottom: 3,
-                    left: 4,
-                    fontSize: 6,
-                    color: theme.accentGold,
-                    fontFamily: theme.mono,
-                    letterSpacing: ".06em",
-                  }}
-                >
-                  ● FOCUS
-                </div>
-              )}
-
-              {/* RMB hint */}
-              {isFocused && !published && totalLeaves > 1 && (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 3,
-                    left: 4,
-                    fontSize: 6,
-                    color: `${theme.accentGold}99`,
-                    fontFamily: theme.mono,
-                    pointerEvents: "none",
-                  }}
-                >
-                  RMB·SCALE
-                </div>
-              )}
-
-              {/* Tag */}
-              {showTag && !isGhost && (
-                <span
-                  style={{
-                    fontSize: tSize,
-                    fontWeight: 700,
-                    letterSpacing: ".07em",
-                    textTransform: "uppercase",
-                    color: tagClr,
-                    fontFamily: theme.mono,
-                    flexShrink: 0,
-                    lineHeight: 1,
-                  }}
-                >
-                  {story.tag}
-                </span>
-              )}
-
-              {/* Headline */}
-              {!isGhost && (
-                <p
-                  style={{
-                    margin: 0,
-                    fontSize: hSize,
-                    fontWeight: 800,
-                    lineHeight: 1.15,
-                    color: theme.textColor,
-                    fontFamily: theme.font,
-                    overflow: "hidden",
-                    display: "-webkit-box",
-                    WebkitLineClamp: maxL,
-                    WebkitBoxOrient: "vertical",
-                    flexShrink: 1,
-                  }}
-                >
-                  {story?.headline}
-                </p>
-              )}
-
-              {/* Deck */}
-              {showDeck && !isGhost && (
-                <p
-                  style={{
-                    margin: 0,
-                    fontSize: dSize,
-                    color: theme.subColor,
-                    lineHeight: 1.45,
-                    fontStyle: "italic",
-                    overflow: "hidden",
-                    display: "-webkit-box",
-                    WebkitLineClamp: Math.max(1, Math.floor(h / (dSize * 2.7))),
-                    WebkitBoxOrient: "vertical",
-                  }}
-                >
-                  {story.deck}
-                </p>
-              )}
-            </div>
-          );
-        })}
-
-        {/* Divider handles */}
-        {splits.map((s, i) => {
-          const T = 9,
-            v = s.dir === "v";
-          return (
-            <div
-              key={i}
-              onPointerDown={(e) => onDividerDown(e, s)}
-              onPointerMove={onDividerMove}
-              onPointerUp={onDividerUp}
-              style={{
-                position: "absolute",
-                left: v
-                  ? `calc(${(s.x / W) * 100}% - ${T / 2}px)`
-                  : `${(s.x / W) * 100}%`,
-                top: v
-                  ? `${(s.y / H) * 100}%`
-                  : `calc(${(s.y / H) * 100}% - ${T / 2}px)`,
-                width: v ? T : `${(s.w / W) * 100}%`,
-                height: v ? `${(s.h / H) * 100}%` : T,
-                cursor: v ? "col-resize" : "row-resize",
-                zIndex: 20,
-                background: "transparent",
-                backgroundImage: v
-                  ? `linear-gradient(to right,transparent 35%,${theme.accentGold}99 35%,${theme.accentGold}99 65%,transparent 65%)`
-                  : `linear-gradient(to bottom,transparent 35%,${theme.accentGold}99 35%,${theme.accentGold}99 65%,transparent 65%)`,
-                animation: "ngGlow 2.2s ease-in-out infinite",
+                background: `rgba(200,169,110,${opacity})`,
+                border: `0.5px solid ${theme.darkMode ? "#3a3020" : "#e2d5ba"}`,
+                gridColumn: `${c + 1}`,
+                gridRow: `${r + 1}`,
               }}
             />
           );
-        })}
+        }),
+      )}
 
-        {/* Empty state */}
-        {totalLeaves === 0 && !extOver && (
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              pointerEvents: "none",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexDirection: "column",
-              gap: 8,
-            }}
-          >
-            <div style={{ fontSize: 26, opacity: 0.15 }}>📰</div>
-            <p
-              style={{
-                color: theme.subColor,
-                fontSize: 11,
-                textAlign: "center",
-                margin: 0,
-              }}
-            >
-              Drag stories here to build your front page
-            </p>
-            <p
-              style={{
-                color: `${theme.subColor}77`,
-                fontSize: 9,
-                textAlign: "center",
-                margin: 0,
-              }}
-            >
-              Up to {MAX_HEADLINES} headlines · LMB drag dividers · RMB drag
-              pane to scale
-            </p>
-          </div>
-        )}
-
-        {/* Drop hint bar */}
-        {extOver && totalLeaves < MAX_HEADLINES && !extGhostId && (
-          <div
-            style={{
-              position: "absolute",
-              bottom: 0,
-              left: 0,
-              right: 0,
-              zIndex: 30,
-              pointerEvents: "none",
-              background: "#2d6a4fcc",
-              padding: "5px 0",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <span
-              style={{
-                fontSize: 9,
-                color: "#fff",
-                fontFamily: DEFAULT_THEME.mono,
-                letterSpacing: ".1em",
-              }}
-            >
-              {totalLeaves === 0
-                ? "DROP TO PLACE"
-                : `SPLITS FOCUSED PANE · ${totalLeaves + 1}/${MAX_HEADLINES}`}
-            </span>
-          </div>
-        )}
-
-        {/* Full banner */}
-        {totalLeaves >= MAX_HEADLINES && !anyDragging && (
-          <div
-            style={{
-              position: "absolute",
-              bottom: 0,
-              left: 0,
-              right: 0,
-              background: `${theme.textColor}cc`,
-              color: theme.bgColor ?? "#f5f1e8",
-              fontSize: 9,
-              textAlign: "center",
-              padding: "4px 0",
-              letterSpacing: ".08em",
-              pointerEvents: "none",
-              zIndex: 40,
-            }}
-          >
-            FULL · DRAG PANES TO SWAP · DROP STORY TO REPLACE
-          </div>
-        )}
-      </div>
-
-      {/* Delete zone */}
-      {anyDragging && !published && (
+      {/* Drop ghost preview */}
+      {dropPreview && (
         <div
-          onDragOver={onDeleteDragOver}
-          onDragLeave={onDeleteDragLeave}
-          onDrop={onDeleteDrop}
           style={{
-            width: "100%",
-            height: 44,
+            ...absStyle(
+              dropPreview.col,
+              dropPreview.row,
+              dropPreview.w,
+              dropPreview.h,
+              0,
+            ),
+            background: "#2d6a4f33",
+            border: "2px dashed #2d6a4f",
+            borderRadius: 4,
+            zIndex: 5,
+            pointerEvents: "none",
+          }}
+        />
+      )}
+
+      {/* Resize ghost */}
+      {resizing && ghostRect && (
+        <div
+          style={{
+            ...absStyle(
+              ghostRect.col,
+              ghostRect.row,
+              ghostRect.w,
+              ghostRect.h,
+              0,
+            ),
+            background: ghostRect.valid ? `${theme.textColor}18` : "#ef444422",
+            border: `2px dashed ${ghostRect.valid ? theme.textColor : "#ef4444"}`,
+            borderRadius: 4,
+            zIndex: 6,
+            pointerEvents: "none",
+          }}
+        />
+      )}
+
+      {/* Placed headline cards */}
+      {items.map((item) => {
+        const tagStyle = TAG_COLORS[item.story.tag] || TAG_COLORS.default;
+        const isResizingThis = resizing?.id === item.id;
+        const w = computeWeight(item);
+
+        // Visual edge hint strips (shown when hover edge detected for this item)
+        const showEdge = hoverEdge?.id === item.id && !resizing;
+
+        return (
+          <div
+            key={item.id}
+            onPointerMove={(e) => handleCardPointerMove(e, item.id)}
+            onPointerLeave={handleCardPointerLeave}
+            onPointerDown={(e) => handleCardPointerDown(e, item.id)}
+            style={{
+              ...absStyle(item.col, item.row, item.w, item.h, 2),
+              background: theme.cardBg,
+              border: isResizingThis
+                ? `2px solid ${theme.textColor}`
+                : `1.5px solid ${showEdge ? theme.accentGold : theme.cardBorder}`,
+              borderRadius: 4,
+              padding: "6px 8px 20px",
+              overflow: "hidden",
+              zIndex: isResizingThis ? 10 : 7,
+              display: "flex",
+              flexDirection: "column",
+              boxShadow: isResizingThis
+                ? "0 4px 20px rgba(0,0,0,0.25)"
+                : "0 2px 8px rgba(0,0,0,0.12)",
+              transition: isResizingThis ? "none" : "box-shadow 0.15s",
+              touchAction: "none",
+            }}
+          >
+            {/* Edge highlight strips — visual affordance */}
+            {showEdge && !published && (
+              <>
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: 6,
+                    background: "#c8a96e44",
+                    borderRadius: "4px 4px 0 0",
+                    pointerEvents: "none",
+                  }}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    height: 6,
+                    background: "#c8a96e44",
+                    borderRadius: "0 0 4px 4px",
+                    pointerEvents: "none",
+                  }}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    bottom: 0,
+                    width: 6,
+                    background: "#c8a96e44",
+                    borderRadius: "4px 0 0 4px",
+                    pointerEvents: "none",
+                  }}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                    width: 6,
+                    background: "#c8a96e44",
+                    borderRadius: "0 4px 4px 0",
+                    pointerEvents: "none",
+                  }}
+                />
+              </>
+            )}
+
+            {/* Remove button */}
+            {!published && (
+              <button
+                onPointerDown={(e) => e.stopPropagation()} // don't start resize
+                onClick={() => handleRemove(item.id)}
+                style={{
+                  position: "absolute",
+                  top: 4,
+                  right: 4,
+                  background: theme.cardBorder,
+                  border: "none",
+                  borderRadius: "50%",
+                  width: 16,
+                  height: 16,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 10,
+                  color: theme.textColor,
+                  lineHeight: 1,
+                  padding: 0,
+                  zIndex: 12,
+                  flexShrink: 0,
+                }}
+              >
+                ×
+              </button>
+            )}
+
+            {/* Weight badge — now shows weighted sum */}
+            <div
+              style={{
+                position: "absolute",
+                bottom: 4,
+                right: 4,
+                background: theme.textColor,
+                color: theme.bgColor,
+                fontSize: 8,
+                fontWeight: 700,
+                padding: "2px 5px",
+                borderRadius: 3,
+                letterSpacing: "0.05em",
+                zIndex: 12,
+              }}
+            >
+              ◼ {w}
+            </div>
+
+            {/* Resize affordance hint label */}
+            {!published && (
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: 4,
+                  left: 4,
+                  fontSize: 7,
+                  color: theme.accentGold + "99",
+                  pointerEvents: "none",
+                  letterSpacing: "0.04em",
+                }}
+              >
+                ⟺ drag edges
+              </div>
+            )}
+
+            {/* Tag + register */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                marginBottom: 4,
+                flexShrink: 0,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 7,
+                  fontWeight: 700,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  padding: "1px 5px",
+                  borderRadius: 2,
+                  background: tagStyle.bg,
+                  color: tagStyle.color,
+                }}
+              >
+                {item.story.tag}
+              </span>
+              {item.story.emotional_register && (
+                <span
+                  style={{
+                    fontSize: 7,
+                    color: theme.subColor,
+                    fontStyle: "italic",
+                  }}
+                >
+                  {item.story.emotional_register}
+                </span>
+              )}
+            </div>
+
+            {/* Headline */}
+            <p
+              style={{
+                margin: 0,
+                fontWeight: 800,
+                fontSize: Math.max(8, Math.min(14, item.w * item.h * 1.5)),
+                color: theme.textColor,
+                lineHeight: 1.2,
+                fontFamily: theme.font,
+                overflow: "hidden",
+                display: "-webkit-box",
+                WebkitLineClamp: Math.max(2, item.h * 2),
+                WebkitBoxOrient: "vertical",
+                flexShrink: 1,
+              }}
+            >
+              {item.story.headline}
+            </p>
+
+            {/* Deck — only when large enough */}
+            {item.w >= 2 && item.h >= 3 && (
+              <p
+                style={{
+                  margin: "4px 0 0",
+                  fontSize: 8,
+                  color: theme.subColor,
+                  lineHeight: 1.4,
+                  fontStyle: "italic",
+                  overflow: "hidden",
+                  display: "-webkit-box",
+                  WebkitLineClamp: item.h,
+                  WebkitBoxOrient: "vertical",
+                }}
+              >
+                {item.story.deck}
+              </p>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Empty state */}
+      {items.length === 0 && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            gap: 8,
-            borderRadius: 6,
-            background: deleteHover ? "#e74c3c22" : "#00000008",
-            border: `2px dashed ${deleteHover ? "#e74c3c" : "#c0a07088"}`,
-            transition: "background .15s, border-color .15s",
-            cursor: "copy",
-            animation: deleteHover
-              ? "ngDeletePulse .6s ease-in-out infinite"
-              : "none",
+            flexDirection: "column",
+            gap: 6,
+            pointerEvents: "none",
           }}
         >
-          <span
+          <div style={{ fontSize: 22, opacity: 0.2 }}>📰</div>
+          <p
             style={{
-              fontSize: 18,
-              lineHeight: 1,
-              filter: deleteHover ? "none" : "grayscale(1) opacity(0.5)",
-              transition: "filter .15s",
+              color: theme.subColor,
+              fontSize: 11,
+              textAlign: "center",
+              margin: 0,
             }}
           >
-            🗑️
-          </span>
-          <span
+            Drag stories here to build your front page
+          </p>
+          <p
             style={{
-              fontSize: 10,
-              fontFamily: DEFAULT_THEME.mono,
-              letterSpacing: ".1em",
-              color: deleteHover ? "#e74c3c" : theme.subColor,
-              transition: "color .15s",
+              color: theme.subColor + "88",
+              fontSize: 9,
+              textAlign: "center",
+              margin: 0,
             }}
           >
-            {deleteHover ? "RELEASE TO REMOVE" : "DRAG HERE TO REMOVE"}
-          </span>
+            Up to {MAX_HEADLINES} headlines · Drag edges to resize &amp; weight
+          </p>
+        </div>
+      )}
+
+      {/* Max banner */}
+      {items.length >= MAX_HEADLINES && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            background: theme.textColor + "dd",
+            color: theme.bgColor,
+            fontSize: 9,
+            textAlign: "center",
+            padding: "4px 0",
+            letterSpacing: "0.08em",
+            pointerEvents: "none",
+            zIndex: 20,
+          }}
+        >
+          MAX {MAX_HEADLINES} HEADLINES PLACED
         </div>
       )}
     </div>
