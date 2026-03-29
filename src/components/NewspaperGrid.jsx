@@ -534,7 +534,7 @@ export default function NewspaperGrid({
     const ratio = 0.6 + Math.min(area / 80, 0.15); // 0.60–0.75
     const base = headlinePx * ratio;
     // Nudge down for very long deck text so it still fits
-    const lengthPenalty = Math.max(0, (len - 60) * 0.04);
+    const lengthPenalty = Math.max(0, (len - 60) * 0.02);
     return Math.max(7, Math.min(14, base - lengthPenalty));
   }
 
