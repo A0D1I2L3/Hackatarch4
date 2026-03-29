@@ -9,7 +9,7 @@ A browser-based newspaper editorial simulation game set in Bharatpur, India. You
 | Layer | Tool |
 |---|---|
 | Frontend | React 18 + Vite 7 |
-| Styling | CSS |
+| Styling | Inline theme system (no CSS framework) |
 | AI Narration | Grok API (xAI) |
 | Persistence | `localStorage` (game state + settings) |
 
@@ -24,7 +24,7 @@ src/
   context/
     SettingsContext.jsx           ← Theme, font, dark mode — persisted to localStorage
   components/
-    IntroScreen.jsx               ← Streamlined start screen
+    IntroScreen.jsx               ← Start screen
     NewspaperGrid.jsx             ← Drag-and-resize bento grid (10×10)
     StoryCard.jsx                 ← Story cards in the left pool
     StoryModal.jsx                ← Full story read popup
@@ -39,12 +39,6 @@ src/
     constants.js                  ← SLOTS, INITIAL_SCORES, DAY_1_SEED, system prompt
     grokApi.js                    ← Grok API calls (Part A scores + Part B next day)
     scoring.js                    ← Collapse checks, win conditions
-    decisionEngine.js             ← Deterministic impact calculator
-  store/
-    gameStore.js                  ← Legacy Zustand store (unused in main flow)
-  firebase/
-    config.js                     ← Firebase init (optional, not used in main flow)
-    firestoreService.js           ← Firestore read/write wrappers
 ```
 
 ---
@@ -74,7 +68,7 @@ Get a Grok API key at [console.x.ai](https://console.x.ai).
    - `VITE_GROK_API_KEY` → your key
 4. Deploy — no server config needed, it's a pure static build
 
-> **Note on saves:** Game progress and settings persist via `localStorage`, which is per-browser and per-device. There is no cross-device sync. Refreshing the page resumes exactly where you left off. Starting a new game clears the save.
+> **Note on saves:** Game progress and settings persist via `localStorage` — per-browser, per-device. Refreshing resumes exactly where you left off. Starting a new game clears the save.
 
 ---
 
